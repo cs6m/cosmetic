@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8f2ea"/>
+      <stop offset="1" stop-color="#e7d3c2"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f0ddb0"/>
+      <stop offset="0.45" stop-color="#c6a15b"/>
+      <stop offset="1" stop-color="#9a7840"/>
+    </linearGradient>
+    <linearGradient id="jar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fffdfb"/>
+      <stop offset="1" stop-color="#f0e2d4"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#6a463c" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+  <rect width="800" height="800" fill="url(#bg)"/>
+  <path d="M0 520c120-40 180 30 300 10s180-70 280-20 140 40 220 10v280H0Z" fill="#ead8c8" opacity="0.85"/>
+  <path d="M520 180c40 30 70 20 110 50-30 10-48 36-70 28-10-28-22-58-40-78z" fill="#7d8f62"/>
+  <path d="M560 150c18 34 8 62-8 84 22-6 48-2 70 16-18-36-28-70-62-100z" fill="#5f7348"/>
+  <g filter="url(#soft)">
+    <rect x="250" y="300" width="300" height="250" rx="36" fill="url(#jar)"/>
+    <rect x="230" y="248" width="340" height="78" rx="18" fill="url(#gold)"/>
+    <rect x="248" y="266" width="304" height="10" rx="5" fill="#fff" opacity="0.35"/>
+    <ellipse cx="400" cy="318" rx="112" ry="16" fill="#f7efe4"/>
+  </g>
+  <g fill="#5c3a32" font-family="Georgia, serif" text-anchor="middle">
+    <path d="M400 392c8 16 8 28 0 40 16-4 28 4 32 16-16 4-28 0-32 12-4-12-16-8-32-12 4-12 16-20 32-16-8-12-8-24 0-40z"/>
+    <text x="400" y="470" font-size="28">Glowora</text>
+    <text x="400" y="496" font-size="13" font-family="Inter, Arial, sans-serif" letter-spacing="1.5">HYDRATING CREAM</text>
+  </g>
+</svg>

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f6efe6"/>
+      <stop offset="1" stop-color="#e8d4c3"/>
+    </linearGradient>
+    <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e6c48a"/>
+      <stop offset="1" stop-color="#b8884e"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="16" flood-color="#6a463c" flood-opacity="0.16"/>
+    </filter>
+  </defs>
+  <rect width="800" height="800" fill="url(#bg)"/>
+  <g filter="url(#soft)">
+    <rect x="230" y="250" width="340" height="70" rx="16" fill="url(#wood)"/>
+    <rect x="250" y="310" width="300" height="250" rx="40" fill="#c98a5a"/>
+    <ellipse cx="400" cy="330" rx="120" ry="18" fill="#e2b07a"/>
+    <g fill="#f3d7b0" opacity="0.55">
+      <circle cx="340" cy="400" r="7"/>
+      <circle cx="390" cy="430" r="5"/>
+      <circle cx="450" cy="390" r="6"/>
+      <circle cx="420" cy="470" r="4"/>
+      <circle cx="360" cy="480" r="6"/>
+      <circle cx="470" cy="460" r="5"/>
+    </g>
+  </g>
+  <g fill="#fffaf4" font-family="Georgia, serif" text-anchor="middle">
+    <text x="400" y="430" font-size="26">Glowora</text>
+    <text x="400" y="456" font-size="12" font-family="Inter, Arial, sans-serif" letter-spacing="1.5">BODY SCRUB</text>
+  </g>
+</svg>
