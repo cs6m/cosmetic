@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useSyncExternalStore } from "react"
 import { ICON_NAMES } from "../icons"
 import { normalizeGovernorates } from "../checkout"
-import { MEDIA_PUBLIC_PREFIX } from "../lib/supabaseClient"
+import { MEDIA_PUBLIC_PREFIX, supabaseConfigError } from "../lib/supabaseClient"
+import { placeOrder as insertStorefrontOrder } from "../services/customerService"
 import {
   attachSync,
   changeOwnPassword,
@@ -11,6 +12,7 @@ import {
   signInStaff,
   signOutStaff,
   syncEnabled,
+  waitForRemote,
 } from "./supabaseSync"
 import { getOfferProducts, brands as catalogBrands, categories as seedCategories, products as seedProducts, subcategories as seedSubs, toIqd } from "./catalog"
 
@@ -762,10 +764,33 @@ function migrate(db) {
 }
 
 function readRaw() {
+  // A configured Supabase project is the only database. This browser's cache is never reloaded.
+  if (syncEnabled || supabaseConfigError) return null
   try {
     return JSON.parse(localStorage.getItem(KEY) || "null")
   } catch {
     return null
+  }
+}
+
+// Empty collections plus the settings shape the screens expect. Hydrate fills this from Supabase.
+function remoteShell() {
+  const db = buildSeed()
+  return {
+    ...db,
+    products: [],
+    orders: [],
+    customers: [],
+    reviews: [],
+    banners: [],
+    brands: [],
+    categories: [],
+    subcategories: {},
+    badges: [],
+    faqs: [],
+    socials: [],
+    team: [],
+    audit: [],
   }
 }
 
@@ -823,6 +848,15 @@ function normalizeShopOrder(order) {
 
 export function ensure() {
   if (state) return state
+  if (supabaseConfigError) {
+    state = remoteShell()
+    return state
+  }
+  if (syncEnabled) {
+    state = remoteShell()
+    startLiveSync()
+    return state
+  }
   const parsed = readRaw()
   if (!parsed || !Array.isArray(parsed.products)) {
     state = buildSeed()
@@ -831,14 +865,9 @@ export function ensure() {
     if (parsed.version !== DB_VERSION || !parsed.banners) write(state)
   }
   convertShopOrdersOnce()
-  if (!syncEnabled) {
-    // Browser-only mode. With Supabase, orders come from the database, never from this key.
-    const pulled = pullShopOrders(state)
-    state = pulled.db
-    if (pulled.changed) write(state)
-  } else {
-    startLiveSync()
-  }
+  const pulled = pullShopOrders(state)
+  state = pulled.db
+  if (pulled.changed) write(state)
   return state
 }
 
@@ -850,6 +879,7 @@ function cacheable(db) {
 }
 
 function write(next) {
+  if (syncEnabled || supabaseConfigError) return
   localStorage.setItem(KEY, JSON.stringify(cacheable(next)))
 }
 
@@ -894,11 +924,13 @@ function replaceText(map) {
 
 function renameOrder(from, to) {
   setRemote({ ...state, orders: state.orders.map((order) => (order.id === from ? { ...order, id: to } : order)) })
-  try {
-    const list = JSON.parse(localStorage.getItem(SHOP_ORDERS) || "[]")
-    localStorage.setItem(SHOP_ORDERS, JSON.stringify(list.map((item) => (item.id === from ? { ...item, id: to } : item))))
-  } catch {
-    /* ignore */
+  if (!syncEnabled) {
+    try {
+      const list = JSON.parse(localStorage.getItem(SHOP_ORDERS) || "[]")
+      localStorage.setItem(SHOP_ORDERS, JSON.stringify(list.map((item) => (item.id === from ? { ...item, id: to } : item))))
+    } catch {
+      /* ignore */
+    }
   }
   window.dispatchEvent(new CustomEvent("glowora-order-renamed", { detail: { from, to } }))
 }
@@ -1102,6 +1134,7 @@ const LOCK = "glowora-admin-lock"
 const FAILS = "glowora-admin-fails"
 
 export async function login(email, password) {
+  if (supabaseConfigError) return { ok: false, reason: "config" }
   const lock = Number(sessionStorage.getItem(LOCK) || 0)
   if (Date.now() < lock) return { ok: false, reason: "locked" }
   const normalized = email.trim().toLowerCase()
@@ -1170,14 +1203,36 @@ function cleanText(value, max) {
   return String(value || "").trim().slice(0, max)
 }
 
-export function recordStorefrontOrder(order) {
+// Puts a row that Supabase already accepted into memory without writing it again.
+export function adoptStorefrontOrder(order) {
   const db = ensure()
-  if (db.orders.some((item) => item.id === order.id)) return
+  const next = normalizeShopOrder({ ...order, status: order.status || "pending", source: "storefront" })
+  if (db.orders.some((item) => item.id === next.id)) {
+    setRemote({ ...db, orders: db.orders.map((item) => (item.id === next.id ? { ...item, ...next } : item)) })
+    return next
+  }
+  setRemote({ ...db, orders: [next, ...db.orders] })
+  return next
+}
+
+export async function recordStorefrontOrder(order) {
+  if (supabaseConfigError) {
+    const error = new Error(supabaseConfigError)
+    throw error
+  }
+  if (syncEnabled) {
+    await waitForRemote()
+    const saved = await insertStorefrontOrder(order)
+    return adoptStorefrontOrder(saved)
+  }
+  const db = ensure()
+  if (db.orders.some((item) => item.id === order.id)) return order
   const next = normalizeShopOrder({ ...order, status: "pending", source: "storefront" })
   const customers = db.customers.some((item) => item.id === "guest-store")
     ? db.customers
     : [...db.customers, seedCustomers().find((item) => item.id === "guest-store")]
   commit({ ...db, customers, orders: [next, ...db.orders] })
+  return next
 }
 
 const FLOW = {
@@ -1237,6 +1292,7 @@ export function advanceOrder(orderId, action) {
 }
 
 function syncShopStatus(order) {
+  if (syncEnabled || supabaseConfigError) return
   try {
     const list = JSON.parse(localStorage.getItem(SHOP_ORDERS) || "[]")
     if (!Array.isArray(list)) return

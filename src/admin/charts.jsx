@@ -42,7 +42,7 @@ function niceScale(max, ticks = 4) {
 }
 
 function useWidth(ref) {
-  const [width, setWidth] = useState(640)
+  const [width, setWidth] = useState(280)
   useEffect(() => {
     const node = ref.current
     if (!node) return undefined
@@ -57,9 +57,9 @@ function useWidth(ref) {
 }
 
 // Evenly spaced X-axis label positions; the count adapts to the available width.
-function tickIndexes(length, width) {
+function tickIndexes(length, width, pad) {
   if (length <= 1) return [0]
-  const target = Math.max(2, Math.min(length, Math.floor((width - PAD.left - PAD.right) / 86)))
+  const target = Math.max(2, Math.min(length, Math.floor((width - pad.left - pad.right) / (width < 480 ? 64 : 86))))
   const indexes = []
   for (let i = 0; i < target; i += 1) indexes.push(Math.round((i * (length - 1)) / (target - 1)))
   return [...new Set(indexes)]
@@ -86,20 +86,21 @@ export function InteractiveChart({
   const gradientId = useId().replace(/:/g, "")
   const wrapRef = useRef(null)
   const width = useWidth(wrapRef)
+  const pad = width < 480 ? { top: 16, right: 8, bottom: 36, left: 44 } : PAD
   const [hover, setHover] = useState(-1)
   const dragging = useRef(false)
 
-  const innerW = width - PAD.left - PAD.right
-  const innerH = HEIGHT - PAD.top - PAD.bottom
+  const innerW = width - pad.left - pad.right
+  const innerH = HEIGHT - pad.top - pad.bottom
   const scale = useMemo(() => niceScale(Math.max(...values, 0)), [values])
   const stepX = values.length > 1 ? innerW / (values.length - 1) : 0
-  const xAt = (index) => PAD.left + (values.length > 1 ? index * stepX : innerW / 2)
-  const yAt = (value) => PAD.top + innerH - (value / scale.max) * innerH
+  const xAt = (index) => pad.left + (values.length > 1 ? index * stepX : innerW / 2)
+  const yAt = (value) => pad.top + innerH - (value / scale.max) * innerH
 
   const points = values.map((value, index) => [xAt(index), yAt(value)])
   const line = points.map(([x, y], index) => `${index ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ")
   const area = points.length
-    ? `${line} L${points[points.length - 1][0].toFixed(1)},${PAD.top + innerH} L${points[0][0].toFixed(1)},${PAD.top + innerH} Z`
+    ? `${line} L${points[points.length - 1][0].toFixed(1)},${pad.top + innerH} L${points[0][0].toFixed(1)},${pad.top + innerH} Z`
     : ""
 
   const yTicks = []
@@ -110,7 +111,7 @@ export function InteractiveChart({
 
   const indexFromEvent = (event) => {
     const rect = wrapRef.current.getBoundingClientRect()
-    const x = event.clientX - rect.left - PAD.left
+    const x = event.clientX - rect.left - pad.left
     if (values.length <= 1) return 0
     return Math.max(0, Math.min(values.length - 1, Math.round(x / stepX)))
   }
@@ -143,10 +144,11 @@ export function InteractiveChart({
   }
 
   const active = hover >= 0 ? hover : selected
-  const tipLeft = active >= 0 ? Math.min(Math.max(xAt(active), 90), width - 90) : 0
+  const tipLeft = active >= 0 ? Math.min(Math.max(xAt(active), width < 480 ? 72 : 90), width - (width < 480 ? 72 : 90)) : 0
+  const axisFont = width < 480 ? 11 : 14
 
   return (
-    <div ref={wrapRef} dir="ltr" className="relative select-none">
+    <div ref={wrapRef} dir="ltr" className="relative select-none overflow-hidden">
       <svg
         width={width}
         height={HEIGHT}
@@ -177,8 +179,8 @@ export function InteractiveChart({
 
         {yTicks.map((value) => (
           <g key={value}>
-            <line x1={PAD.left} x2={width - PAD.right} y1={yAt(value)} y2={yAt(value)} stroke={value === 0 ? "#5a4638" : "#3a2d26"} strokeDasharray={value === 0 ? undefined : "3 6"} />
-            <text x={PAD.left - 10} y={yAt(value) + 5} textAnchor="end" fill="#f1e3d6" fontSize="14" fontWeight="600">
+            <line x1={pad.left} x2={width - pad.right} y1={yAt(value)} y2={yAt(value)} stroke={value === 0 ? "#5a4638" : "#3a2d26"} strokeDasharray={value === 0 ? undefined : "3 6"} />
+            <text x={pad.left - 8} y={yAt(value) + 4} textAnchor="end" fill="#f1e3d6" fontSize={axisFont} fontWeight="600">
               {formatCompact(value, language)}
             </text>
           </g>
@@ -187,10 +189,10 @@ export function InteractiveChart({
         {area && <path d={area} fill={`url(#${gradientId})`} />}
         {line && <path d={line} fill="none" stroke={stroke} strokeWidth="2.8" strokeLinejoin="round" strokeLinecap="round" />}
 
-        {tickIndexes(values.length, width).map((index) => (
+        {tickIndexes(values.length, width, pad).map((index) => (
           <g key={index}>
-            <line x1={xAt(index)} x2={xAt(index)} y1={PAD.top + innerH} y2={PAD.top + innerH + 5} stroke="#5a4638" />
-            <text x={xAt(index)} y={HEIGHT - 14} textAnchor={index === 0 ? "start" : index === values.length - 1 && values.length > 1 ? "end" : "middle"} fill="#e7d3c4" fontSize="13" fontWeight="500">
+            <line x1={xAt(index)} x2={xAt(index)} y1={pad.top + innerH} y2={pad.top + innerH + 5} stroke="#5a4638" />
+            <text x={xAt(index)} y={HEIGHT - (width < 480 ? 10 : 14)} textAnchor={index === 0 ? "start" : index === values.length - 1 && values.length > 1 ? "end" : "middle"} fill="#e7d3c4" fontSize={axisFont} fontWeight="500">
               {tickLabel(stamps[index])}
             </text>
           </g>
@@ -198,13 +200,13 @@ export function InteractiveChart({
 
         {selected >= 0 && selected < values.length && (
           <g>
-            <line x1={xAt(selected)} x2={xAt(selected)} y1={PAD.top} y2={PAD.top + innerH} stroke="#c6a15b" strokeWidth="1.5" />
+            <line x1={xAt(selected)} x2={xAt(selected)} y1={pad.top} y2={pad.top + innerH} stroke="#c6a15b" strokeWidth="1.5" />
             <circle cx={xAt(selected)} cy={yAt(values[selected])} r="6.5" fill="#c6a15b" stroke="#1b1613" strokeWidth="3" />
           </g>
         )}
         {hover >= 0 && hover !== selected && (
           <g>
-            <line x1={xAt(hover)} x2={xAt(hover)} y1={PAD.top} y2={PAD.top + innerH} stroke="#e7d3c4" strokeOpacity="0.5" strokeDasharray="4 4" />
+            <line x1={xAt(hover)} x2={xAt(hover)} y1={pad.top} y2={pad.top + innerH} stroke="#e7d3c4" strokeOpacity="0.5" strokeDasharray="4 4" />
             <circle cx={xAt(hover)} cy={yAt(values[hover])} r="5" fill={stroke} stroke="#1b1613" strokeWidth="2.5" />
           </g>
         )}
@@ -212,11 +214,11 @@ export function InteractiveChart({
 
       {active >= 0 && active < values.length && (
         <div
-          className="pointer-events-none absolute top-1 z-10 -translate-x-1/2 rounded-xl border border-[#5a4638] bg-[#120f0d]/95 px-3 py-2 text-center shadow-xl"
+          className="pointer-events-none absolute top-1 z-10 max-w-[min(220px,78%)] -translate-x-1/2 rounded-xl border border-[#5a4638] bg-[#120f0d]/95 px-3 py-2 text-center shadow-xl"
           style={{ left: tipLeft }}
         >
-          <p className="whitespace-nowrap text-xs text-[#b5a194]">{describe ? describe(active) : tickLabel(stamps[active])}</p>
-          <p className="whitespace-nowrap font-serif text-lg leading-tight text-[#f6f1eb]">{format ? format(values[active]) : values[active]}</p>
+          <p className="text-xs leading-snug text-[#b5a194]">{describe ? describe(active) : tickLabel(stamps[active])}</p>
+          <p className="font-serif text-base leading-tight text-[#f6f1eb] sm:text-lg">{format ? format(values[active]) : values[active]}</p>
         </div>
       )}
     </div>

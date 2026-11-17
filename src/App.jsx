@@ -19,6 +19,7 @@ import MenuSheet from "./components/MenuSheet"
 import ProductDetail from "./components/ProductDetail"
 import WishlistScreen from "./components/WishlistScreen"
 import { Toast } from "./components/ui"
+import { supabaseConfigError } from "./lib/supabaseClient"
 
 function Shell() {
   const shop = useShop()
@@ -26,7 +27,7 @@ function Shell() {
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: 0 })
-  }, [shop.view, shop.activeProduct.id, shop.navTick])
+  }, [shop.view, shop.activeProduct?.id, shop.navTick])
 
   useEffect(() => {
     const onKey = (event) => {
@@ -40,6 +41,9 @@ function Shell() {
 
   return (
     <div className="min-h-dvh bg-[radial-gradient(circle_at_top,#fbf6f0,#e6d8cb)] sm:flex sm:items-center sm:justify-center sm:py-6">
+      {supabaseConfigError && (
+        <p className="fixed inset-x-0 top-0 z-50 bg-[#5c3a32] px-4 py-2 text-center text-xs leading-relaxed text-white">{supabaseConfigError}</p>
+      )}
       <div
         dir={shop.language === "ar" ? "rtl" : "ltr"}
         lang={shop.language}
@@ -47,7 +51,7 @@ function Shell() {
       >
         <Header />
         <div ref={scroller} className="app-scroll min-h-0 flex-1 overflow-y-auto">
-          <div key={shop.view + (shop.view === "product" ? shop.activeProduct.id : "")} className="screen-in">
+          <div key={shop.view + (shop.view === "product" ? shop.activeProduct?.id || "" : "")} className="screen-in">
             {shop.view === "home" && <HomeScreen />}
             {shop.view === "shop" && <CollectionScreen />}
             {shop.view === "categories" && <CategoriesScreen />}

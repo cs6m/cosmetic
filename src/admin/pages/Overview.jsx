@@ -101,8 +101,8 @@ export default function Overview() {
       </div>
 
       <div className="grid gap-3 xl:grid-cols-2">
-        <Panel className="p-4">
-          <div className="mb-3 flex items-baseline justify-between gap-3">
+        <Panel className="min-w-0 overflow-hidden p-4">
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
             <h2 className="text-base font-medium text-[#f6f1eb]">{t("salesChart")}</h2>
             <span className="text-xs text-[#b5a194]">{t("salesAxis")}</span>
           </div>
@@ -118,8 +118,8 @@ export default function Overview() {
             label={t("salesChart")}
           />
         </Panel>
-        <Panel className="p-4">
-          <div className="mb-3 flex items-baseline justify-between gap-3">
+        <Panel className="min-w-0 overflow-hidden p-4">
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
             <h2 className="text-base font-medium text-[#f6f1eb]">{t("trafficChart")}</h2>
             <span className="text-xs text-[#b5a194]">{t("visitorsAxis")}</span>
           </div>
@@ -144,7 +144,7 @@ export default function Overview() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs tracking-wide text-[#b5a194]">{t("dayDetails")}</p>
-            <h2 className="font-serif text-2xl text-[#f6f1eb] sm:text-3xl">{dayLabel(selected)}</h2>
+            <h2 className="break-words font-serif text-2xl text-[#f6f1eb] sm:text-3xl">{dayLabel(selected)}</h2>
           </div>
           {!hourly && (
             <div className="flex items-center gap-2">
@@ -206,14 +206,14 @@ export default function Overview() {
                   const name = order.customer?.name || (person?.id === "guest-store" ? t("guest") : person?.name) || t("guest")
                   return (
                     <li key={order.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-3">
-                      <div className="min-w-0 flex-1">
+                      <div className="min-w-0 flex-1 basis-[10rem]">
                         <p className="text-sm text-[#f6f1eb]">{order.id}</p>
                         <p className="truncate text-xs text-[#b5a194]">
                           {name} · {formatWhen(order.date, language)} · {order.items.reduce((sum, item) => sum + (Number(item.qty) || 0), 0)} {t("units")}
                         </p>
                       </div>
                       <StatusPill status={order.status} label={t(order.status)} />
-                      <span className="min-w-24 text-end text-sm text-[#e7d3c4]">{money(order.total, language)}</span>
+                      <span className="text-sm text-[#e7d3c4] sm:min-w-24 sm:text-end">{money(order.total, language)}</span>
                     </li>
                   )
                 })}
@@ -249,7 +249,7 @@ export default function Overview() {
       </Panel>
 
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1.4fr)_minmax(260px,0.8fr)]">
-        <Panel className="p-4">
+        <Panel className="min-w-0 overflow-hidden p-4">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm text-[#e7d3c4]">{t("recentOrders")}</h2>
             <button type="button" onClick={() => open("orders")} className="text-xs text-[#e4c99a]">
@@ -263,22 +263,22 @@ export default function Overview() {
               {metrics.orders.slice(0, 6).map((order) => {
                 const person = db.customers.find((item) => item.id === order.customerId)
                 return (
-                  <li key={order.id} className="flex items-center gap-3 py-3">
-                    <div className="min-w-0 flex-1">
+                  <li key={order.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-3">
+                    <div className="min-w-0 flex-1 basis-[10rem]">
                       <p className="text-sm text-[#f6f1eb]">{order.id}</p>
                       <p className="truncate text-xs text-[#b5a194]">
                         {person?.id === "guest-store" ? t("guest") : person?.name} · {formatWhen(order.date, language)}
                       </p>
                     </div>
                     <StatusPill status={order.status} label={t(order.status)} />
-                    <span className="min-w-24 text-end text-sm text-[#e7d3c4]">{money(order.total, language)}</span>
+                    <span className="text-sm text-[#e7d3c4] sm:min-w-24 sm:text-end">{money(order.total, language)}</span>
                   </li>
                 )
               })}
             </ul>
           )}
         </Panel>
-        <Panel className="p-4">
+        <Panel className="min-w-0 overflow-hidden p-4">
           <h2 className="mb-3 text-sm text-[#e7d3c4]">{t("lowStock")}</h2>
           {metrics.low.length === 0 ? (
             <p className="text-sm text-[#b5a194]">{t("noResults")}</p>
@@ -306,7 +306,7 @@ function Stat({ label, value }) {
   return (
     <div className="rounded-2xl bg-[#120f0d] px-4 py-3">
       <p className="text-xs text-[#b5a194]">{label}</p>
-      <p className="mt-1 truncate font-serif text-2xl text-[#f6f1eb]">{value}</p>
+      <p className="mt-1 break-words font-serif text-xl text-[#f6f1eb] sm:text-2xl">{value}</p>
     </div>
   )
 }
@@ -320,7 +320,7 @@ function Metric({ icon: Icon, label, value, hint, warn }) {
           <Icon size={16} />
         </span>
       </div>
-      <p className="mt-3 truncate font-serif text-3xl text-[#f6f1eb]">{value}</p>
+      <p className="mt-3 break-words font-serif text-2xl text-[#f6f1eb] sm:text-3xl">{value}</p>
       {hint && <p className="mt-1 text-xs text-[#b5a194]">{hint}</p>}
     </Panel>
   )

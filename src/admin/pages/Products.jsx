@@ -216,9 +216,9 @@ export default function Products() {
       <div className="grid gap-3">
         {rows.length === 0 && <Panel className="px-4 py-12 text-center text-sm text-[#b5a194]">{t("noResults")}</Panel>}
         {rows.map((product) => (
-          <Panel key={product.id} className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
-            <img src={product.images[0]} alt="" className="h-20 w-full rounded-2xl object-cover sm:h-16 sm:w-16" />
-            <div className="min-w-0 flex-1">
+          <Panel key={product.id} className="flex flex-wrap items-center gap-3 p-3">
+            <img src={product.images[0]} alt="" className="h-16 w-16 shrink-0 rounded-2xl object-cover" />
+            <div className="min-w-0 flex-1 basis-[12rem]">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="font-medium">{product.name}</p>
                 {product.status === "hidden" && <StatusPill status="returned" label={t("hidden")} />}
@@ -228,12 +228,12 @@ export default function Products() {
                   </span>
                 ))}
               </div>
-              <p className="mt-1 text-xs text-[#b5a194]">
+              <p className="mt-1 truncate text-xs text-[#b5a194]">
                 {product.sku} · {brandLabel(product.brand)} · {product.stock} {t("stock")}
               </p>
             </div>
             <p className="text-sm text-[#e7d3c4]">{money(product.discountPrice && product.discountPrice < product.price ? product.discountPrice : product.price, language)}</p>
-            <div className="flex gap-2">
+            <div className="flex w-full gap-2 sm:w-auto">
               <GhostButton onClick={() => openEdit(product)}>{t("edit")}</GhostButton>
               {can("products.delete") && (
                 <GhostButton className="text-[#f0c2b8]" onClick={() => setRemoveId(product.id)}>

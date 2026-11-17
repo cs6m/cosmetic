@@ -124,12 +124,12 @@ export default function HomeScreen() {
             key={item.label}
             type="button"
             onClick={() => scrollToSection(item.target)}
-            className="flex flex-col items-center gap-2 rounded-2xl px-1 py-1 text-center transition hover:bg-sand/70 active:scale-[0.98]"
+            className="flex min-w-0 flex-col items-center gap-2 rounded-2xl px-1 py-1 text-center transition hover:bg-sand/70 active:scale-[0.98]"
           >
             <span className="grid h-10 w-10 place-items-center rounded-full bg-sand text-cocoa">
               <item.icon size={18} strokeWidth={1.75} />
             </span>
-            <span className="text-[11px] leading-tight text-cocoa">{copyOf(item.target)}</span>
+            <span className="line-clamp-2 text-[11px] leading-tight text-cocoa">{copyOf(item.target)}</span>
           </button>
         ))}
       </section>
@@ -149,9 +149,9 @@ export default function HomeScreen() {
                 alt=""
                 className="h-full w-full object-cover transition duration-700 group-hover:scale-105"
               />
-              <span className="absolute inset-x-2 bottom-2 flex items-center justify-between rounded-full bg-white/92 px-2.5 py-1.5 text-[11px] font-medium text-espresso shadow-sm">
-                {labelCategory(category, language)}
-                <ArrowRight size={12} className="rtl:rotate-180" />
+              <span className="absolute inset-x-1.5 bottom-2 flex min-w-0 items-center justify-between gap-1 rounded-full bg-white/92 px-2.5 py-1.5 text-[11px] font-medium text-espresso shadow-sm">
+                <span className="truncate">{labelCategory(category, language)}</span>
+                <ArrowRight size={12} className="shrink-0 rtl:rotate-180" />
               </span>
             </button>
           ))}

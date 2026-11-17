@@ -2,10 +2,22 @@
 // (product.nameAr, order.customerId, settings.governorates …), so results can be passed straight
 // into the existing components.
 //
-// NOTE: the running app already persists through adminDb.js → supabaseSync.js. These functions are
-// the explicit, standalone API for the same operations (handy for tests, scripts or new screens).
-import { supabase } from "../lib/supabaseClient"
+// The storefront places orders through placeOrder() below (see recordStorefrontOrder). Admin
+// screens share the same tables via adminDb → supabaseSync, which writes only to these tables.
+import { requireSupabase } from "../lib/supabaseClient"
 import { TABLE_BY_NAME } from "../data/supabaseMap"
+
+// Every call goes to the live project. A missing client throws instead of writing locally.
+const supabase = new Proxy(
+  {},
+  {
+    get(_target, prop) {
+      const client = requireSupabase()
+      const value = client[prop]
+      return typeof value === "function" ? value.bind(client) : value
+    },
+  },
+)
 
 const entry = (name) => TABLE_BY_NAME[name]
 const unwrap = ({ data, error }) => {

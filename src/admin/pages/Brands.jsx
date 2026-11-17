@@ -49,17 +49,17 @@ export default function Brands() {
       />
       <div className="grid gap-3 sm:grid-cols-2">
         {db.brands.map((brand) => (
-          <Panel key={brand.id} className="flex items-center gap-3 p-3">
+          <Panel key={brand.id} className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
             {brand.image || brand.logo ? (
-              <img src={brand.image || brand.logo} alt="" className="h-16 w-16 rounded-2xl object-cover" />
+              <img src={brand.image || brand.logo} alt="" className="h-16 w-16 shrink-0 rounded-2xl object-cover" />
             ) : (
-              <span className={`grid h-16 w-16 place-items-center rounded-2xl text-sm ${brand.tone}`}>{brand.mark}</span>
+              <span className={`grid h-16 w-16 shrink-0 place-items-center rounded-2xl text-sm ${brand.tone}`}>{brand.mark}</span>
             )}
             <div className="min-w-0 flex-1">
-              <p className="font-medium">{brand.name}</p>
-              <p className="truncate text-xs text-[#b5a194]">{brand.description}</p>
+              <p className="truncate font-medium">{brand.name}</p>
+              <p className="line-clamp-2 text-xs text-[#b5a194]">{brand.description}</p>
             </div>
-            <div className="flex flex-col gap-2">
+            <div className="flex gap-2 sm:flex-col">
               <GhostButton
                 onClick={() => {
                   setEditingId(brand.id)

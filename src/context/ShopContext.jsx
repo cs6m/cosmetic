@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { checkoutErrors, cleanCheckout, deliveryFee, normalizeGovernorates } from "../checkout"
 import { ensure, localizeProduct, recordStorefrontOrder, useDb, useStorefront } from "../data/adminDb"
+import { supabaseConfigError } from "../lib/supabaseClient"
+import { syncEnabled } from "../data/supabaseSync"
 import { filterProducts, products as catalogProducts, unitPrice } from "../data/catalog"
 
 const ShopContext = createContext(null)
@@ -40,8 +42,9 @@ export function sampleOrders() {
 
 function loadOrders() {
   // Opening the admin database first guarantees any old USD orders are converted to IQD
-  // before this list is read.
+  // before this list is read. With Supabase configured, orders come from the database only.
   ensure()
+  if (syncEnabled || supabaseConfigError) return []
   try {
     const saved = JSON.parse(localStorage.getItem(ORDERS_KEY) || "null")
     if (Array.isArray(saved) && saved.length) return saved
@@ -96,14 +99,15 @@ export function ShopProvider({ children }) {
       return "en"
     }
   })
+  const liveCatalog = syncEnabled || Boolean(supabaseConfigError)
   const allProducts = useMemo(() => {
-    const source = storefront.allProducts.length ? storefront.allProducts : catalogProducts
+    const source = storefront.allProducts.length ? storefront.allProducts : liveCatalog ? [] : catalogProducts
     return source.map((product) => localizeProduct(product, language))
-  }, [storefront, language])
+  }, [storefront, language, liveCatalog])
   const shelf = useMemo(() => {
-    const source = storefront.products.length || storefront.allProducts.length ? storefront.products : catalogProducts
+    const source = storefront.products.length || storefront.allProducts.length ? storefront.products : liveCatalog ? [] : catalogProducts
     return source.map((product) => localizeProduct(product, language))
-  }, [storefront, language])
+  }, [storefront, language, liveCatalog])
   const governorates = useMemo(() => normalizeGovernorates(storefront.settings?.governorates), [storefront])
   const searchLookups = useMemo(
     () => ({ brands: storefront.brands, categories: storefront.categories, subcategories: storefront.subcategories }),
@@ -127,6 +131,22 @@ export function ShopProvider({ children }) {
   // server re-numbers / rejects it), the order list on screen follows immediately.
   const liveDb = useDb()
   useEffect(() => {
+    if (syncEnabled) {
+      setOrderHistory(
+        liveDb.orders.map((order) => ({
+          id: order.id,
+          date: order.date,
+          status: order.status,
+          items: order.items || [],
+          total: order.total,
+          subtotal: order.subtotal,
+          shipping: order.shipping,
+          customer: order.customer,
+          source: order.source,
+        })),
+      )
+      return
+    }
     setOrderHistory((list) => {
       let changed = false
       const next = list.map((item) => {
@@ -187,7 +207,7 @@ export function ShopProvider({ children }) {
     0,
   )
 
-  const activeProduct = allProducts.find((item) => item.id === activeId) ?? allProducts[0] ?? catalogProducts[0]
+  const activeProduct = allProducts.find((item) => item.id === activeId) ?? allProducts[0] ?? (liveCatalog ? null : catalogProducts[0])
   const wishedProducts = shelf.filter((item) => wishlist.includes(item.id))
   const visibleProducts = filterProducts({ query, category, subcategory, sort, brand, source: shelf, lookups: searchLookups })
 
@@ -385,7 +405,8 @@ export function ShopProvider({ children }) {
     window.history.pushState({ ...state, index: indexRef.current }, "")
   }, [navKey])
 
-  const placeOrder = (form) => {
+  const placeOrder = async (form) => {
+    if (supabaseConfigError) return { ok: false, reason: "config", message: supabaseConfigError }
     if (!cartCount) return { ok: false, reason: "empty" }
     if (Object.keys(checkoutErrors(form || {}, governorates)).length) return { ok: false, reason: "invalid" }
     const customer = cleanCheckout(form)
@@ -415,12 +436,17 @@ export function ShopProvider({ children }) {
       }),
       total,
     }
-    const next = [order, ...orderHistory]
-    setOrderHistory(next)
-    saveOrders(next)
-    recordStorefrontOrder(order)
-    setCart({})
-    return { ok: true, id: order.id }
+    try {
+      const saved = await recordStorefrontOrder(order)
+      const placed = { ...order, ...saved, id: saved?.id || order.id }
+      setOrderHistory((list) => [placed, ...list.filter((item) => item.id !== placed.id)])
+      if (!syncEnabled) saveOrders([placed, ...orderHistory.filter((item) => item.id !== placed.id)])
+      setCart({})
+      return { ok: true, id: placed.id }
+    } catch (error) {
+      notify(language === "ar" ? "تعذّر إرسال الطلب. حاولي مرة أخرى." : error?.message || "We couldn't place your order. Please try again.")
+      return { ok: false, reason: "sync", message: error?.message }
+    }
   }
 
   const value = {

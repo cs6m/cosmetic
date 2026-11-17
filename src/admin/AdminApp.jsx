@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react"
 import { login, logout, permissionsOf, sessionUser, useDb } from "../data/adminDb"
+import { supabaseConfigError } from "../lib/supabaseClient"
 import { translate } from "./copy"
 import { AdminContext } from "./context"
 import Brands from "./pages/Brands"
@@ -171,7 +172,7 @@ export default function AdminApp() {
                 {t("signOut")}
               </button>
             </header>
-            <main className="admin-scroll flex-1 px-4 py-5 lg:px-8">
+            <main className="admin-scroll min-w-0 flex-1 overflow-x-hidden px-4 py-5 lg:px-8">
               {allowed && View ? <View /> : <Denied t={t} />}
             </main>
           </div>
@@ -273,7 +274,11 @@ function Login({ language, t, onLanguage, onSuccess, onLeave }) {
     const result = await login(email, password)
     setBusy(false)
     if (!result.ok) {
-      setError(t(result.reason === "customer" ? "customerBlocked" : result.reason === "locked" ? "locked" : "invalid"))
+      setError(
+        result.reason === "config"
+          ? supabaseConfigError
+          : t(result.reason === "customer" ? "customerBlocked" : result.reason === "locked" ? "locked" : "invalid"),
+      )
       return
     }
     onSuccess()
@@ -312,6 +317,7 @@ function Login({ language, t, onLanguage, onSuccess, onLeave }) {
             className="mt-1.5 w-full rounded-xl border border-[#3a2d26] bg-[#120f0d] px-3 py-2.5 text-sm text-[#f6f1eb] outline-none focus:border-[#c6a15b]"
           />
         </label>
+        {supabaseConfigError && <p className="mt-3 text-sm leading-relaxed text-[#f0c2b8]">{supabaseConfigError}</p>}
         {error && <p className="mt-3 text-sm text-[#f0c2b8]">{error}</p>}
         <button type="submit" disabled={busy} className="mt-5 w-full rounded-full bg-[#c6a15b] py-3 text-sm font-medium text-[#2a1c16] disabled:opacity-60">
           {t("signIn")}

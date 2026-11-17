@@ -10,7 +10,7 @@ export function PageHead({ title, text, action }) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1 className="font-serif text-3xl tracking-[-0.03em] text-[#f6f1eb] sm:text-4xl">{title}</h1>
+        <h1 className="font-serif text-2xl tracking-[-0.03em] text-[#f6f1eb] sm:text-4xl">{title}</h1>
         {text && <p className="mt-1 max-w-xl text-sm text-[#b5a194]">{text}</p>}
       </div>
       {action}

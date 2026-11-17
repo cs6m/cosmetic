@@ -1,7 +1,18 @@
 // Admin-side Supabase services: full CRUD for every table, plus the few operations that
 // aren't plain CRUD (order status, image upload, team provisioning, seeding).
 // Row-level security decides what each signed-in team member may actually do.
-import { MEDIA_BUCKET, supabase } from "../lib/supabaseClient"
+import { MEDIA_BUCKET, requireSupabase } from "../lib/supabaseClient"
+
+const supabase = new Proxy(
+  {},
+  {
+    get(_target, prop) {
+      const client = requireSupabase()
+      const value = client[prop]
+      return typeof value === "function" ? value.bind(client) : value
+    },
+  },
+)
 import { buildSeed } from "../data/adminDb"
 import { TABLES, TABLE_BY_NAME } from "../data/supabaseMap"
 

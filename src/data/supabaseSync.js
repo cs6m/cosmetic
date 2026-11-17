@@ -6,7 +6,7 @@
 //   • hydrate()                loads the current rows from Supabase into the db object
 //   • realtime                 postgres_changes events patch the db object, so every open
 //                              browser (customer or admin) updates without a refresh
-import { isSupabaseConfigured, MEDIA_BUCKET, supabase } from "../lib/supabaseClient"
+import { isSupabaseConfigured, MEDIA_BUCKET, requireSupabase, supabase } from "../lib/supabaseClient"
 import { diffDb, stable, TABLES, TABLE_BY_NAME } from "./supabaseMap"
 
 let bridge = null // { get(), setRemote(db), replaceText(map), renameOrder(from, to), dropOrder(id) }
@@ -18,11 +18,29 @@ let pending = 0
 let hydrating = null
 let needsRollback = false // a save failed while others were still queued
 let booted = false
+let remoteReady = false
+let held = null // mutations committed before the first successful hydrate, replayed onto the remote snapshot
+let readyResolve = () => {}
+let readyReject = () => {}
+const remoteReadyPromise = new Promise((resolve, reject) => {
+  readyResolve = resolve
+  readyReject = reject
+})
+remoteReadyPromise.catch(() => {
+  /* surfaced through glowora-sync-error; order placement still rejects on await */
+})
 const dirty = new Set()
 const timers = new Map()
 const memberPasswords = new Map()
 
 export const syncEnabled = isSupabaseConfigured
+
+// Resolves once anonymous (or staff) auth is up and the first database read has replaced
+// whatever was on screen. Order placement waits for this so it never writes only to this browser.
+export function waitForRemote() {
+  if (!supabase) return Promise.reject(new Error("Supabase is not configured"))
+  return remoteReadyPromise
+}
 
 export const getSyncRole = () => role
 export const isStaffSession = () => Boolean(role)
@@ -56,10 +74,21 @@ async function refreshIdentity() {
 }
 
 async function ensureSession() {
-  const { data } = await supabase.auth.getSession()
-  if (data?.session) return
-  const result = await supabase.auth.signInAnonymously()
-  if (result.error) reportError(result.error, "anonymous sign-in (enable Anonymous sign-ins in Supabase Auth settings)")
+  const client = requireSupabase()
+  const { data } = await client.auth.getSession()
+  if (data?.session) return data.session
+  const result = await client.auth.signInAnonymously()
+  if (result.error) {
+    reportError(result.error, "anonymous sign-in (enable Anonymous sign-ins in Supabase Auth settings)")
+    throw result.error
+  }
+  return result.data.session
+}
+
+async function bindRealtimeAuth() {
+  const client = requireSupabase()
+  const { data } = await client.auth.getSession()
+  if (data.session?.access_token) await client.realtime.setAuth(data.session.access_token)
 }
 
 export async function signInStaff(email, password) {
@@ -70,7 +99,10 @@ export async function signInStaff(email, password) {
     await signOutStaff()
     return { ok: false, reason: "invalid" }
   }
+  await bindRealtimeAuth()
+  if (hydrating) await hydrating
   await hydrate()
+  restartRealtime()
   return { ok: true, userId }
 }
 
@@ -78,9 +110,15 @@ export async function signOutStaff() {
   await supabase.auth.signOut()
   role = null
   userId = null
-  await ensureSession()
+  try {
+    await ensureSession()
+  } catch (error) {
+    reportError(error, "anonymous sign-in after sign-out")
+  }
   await refreshIdentity()
+  await bindRealtimeAuth()
   await hydrate()
+  restartRealtime()
 }
 
 export async function changeOwnPassword(email, currentPassword, nextPassword) {
@@ -116,23 +154,76 @@ async function fetchAll(entry) {
   return out
 }
 
+// Replay edits made before the first successful read onto the database snapshot,
+// so a device never uploads its old browser cache as if it were the catalog.
+function replayOnto(base, prev, next) {
+  let merged = base
+  for (const { entry, upserts, removed } of diffDb(prev, next)) {
+    const removedKeys = new Set(removed.map((item) => item.key))
+    let list = entry.read(merged).filter((record) => !removedKeys.has(entry.key(record)))
+    const byKey = new Map(entry.read(next).map((record) => [entry.key(record), record]))
+    for (const { key } of upserts) {
+      const record = byKey.get(key)
+      if (!record) continue
+      const index = list.findIndex((item) => entry.key(item) === key)
+      list = index >= 0 ? list.map((item, i) => (i === index ? record : item)) : [record, ...list]
+    }
+    merged = entry.write(merged, list)
+  }
+  return merged
+}
+
+async function readSnapshot() {
+  let results = []
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const staff = Boolean(role)
+    results = await Promise.all(TABLES.map(async (entry) => [entry, entry.staffOnly && !staff ? [] : await fetchAll(entry)]))
+    if (results.every(([, rows]) => rows !== null)) return { results, failed: false }
+    await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)))
+  }
+  return { results, failed: true }
+}
+
 export function hydrate() {
-  if (!supabase || !bridge) return Promise.resolve()
+  if (!supabase || !bridge) return Promise.resolve(false)
   if (hydrating) return hydrating
   hydrating = (async () => {
-    const staff = Boolean(role)
-    const results = await Promise.all(
-      TABLES.map(async (entry) => [entry, entry.staffOnly && !staff ? [] : await fetchAll(entry)]),
-    )
+    const { results, failed } = await readSnapshot()
     let next = bridge.get()
     // Tables are applied in dependency order (categories before subcategories, …).
     for (const [entry, rows] of results) {
-      if (rows === null) continue // keep what we have if a read failed
+      if (rows === null) {
+        // A failed read must not keep the in-browser seed and present it as live data.
+        if (!remoteReady) next = entry.write(next, [])
+        continue
+      }
       next = entry.write(next, rows.map(entry.fromRow))
     }
+    if (!remoteReady) {
+      if (failed) {
+        bridge.setRemote(next)
+        const error = new Error("Could not read the Supabase database. Local demo data is not being used.")
+        reportError(error, "hydrate")
+        readyReject(error)
+        return false
+      }
+      const pendingEdit = held
+      held = null
+      const merged = pendingEdit ? replayOnto(next, pendingEdit.prev, pendingEdit.next) : next
+      remoteReady = true
+      bridge.setRemote(merged)
+      readyResolve()
+      if (pendingEdit) pushChanges(next, merged)
+      return true
+    }
     bridge.setRemote(next)
+    return !failed
   })()
-    .catch((error) => reportError(error, "hydrate"))
+    .catch((error) => {
+      reportError(error, "hydrate")
+      if (!remoteReady) readyReject(error)
+      return false
+    })
     .finally(() => {
       hydrating = null
     })
@@ -190,6 +281,14 @@ function onChange(entry, payload) {
   else scheduleRefetch(entry)
   // Under RLS a guest simply stops receiving a product that was hidden, so re-read to drop it.
   if (!role && (entry.table === "products" || entry.table === "reviews")) scheduleRefetch(entry)
+}
+
+function restartRealtime() {
+  if (channel) {
+    supabase.removeChannel(channel)
+    channel = null
+  }
+  startRealtime()
 }
 
 function startRealtime() {
@@ -342,6 +441,11 @@ async function runChanges(changes) {
 // Called by adminDb.commit() after every successful local write.
 export function pushChanges(prev, next) {
   if (!supabase || !bridge || !prev) return
+  if (!remoteReady) {
+    // Keep the first pre-hydrate baseline so we replay only the user's delta, not the seed.
+    held = held ? { prev: held.prev, next } : { prev, next }
+    return
+  }
   const changes = diffDb(prev, next)
   if (!changes.length) return
   pending += 1
@@ -380,15 +484,18 @@ export function attachSync(api) {
     try {
       await ensureSession()
       await refreshIdentity()
+      await bindRealtimeAuth()
       await hydrate()
       startRealtime()
-      supabase.auth.onAuthStateChange((event) => {
-        if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
-          refreshIdentity().then(hydrate)
+      supabase.auth.onAuthStateChange((event, session) => {
+        if (session?.access_token) supabase.realtime.setAuth(session.access_token)
+        if (event === "SIGNED_IN" || event === "SIGNED_OUT") {
+          refreshIdentity().then(() => hydrate()).then(() => restartRealtime())
         }
       })
     } catch (error) {
       reportError(error, "start-up")
+      if (!remoteReady) readyReject(error)
     }
   })()
 }

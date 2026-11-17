@@ -59,7 +59,7 @@ export default function CheckoutScreen() {
     setErrors((current) => ({ ...current, phone: "" }))
   }
 
-  const submit = (event) => {
+  const submit = async (event) => {
     event.preventDefault()
     const next = checkoutErrors(form, governorates)
     setErrors(next)
@@ -67,7 +67,7 @@ export default function CheckoutScreen() {
       setAttempt((count) => count + 1)
       return
     }
-    const result = placeOrder(cleanCheckout(form))
+    const result = await placeOrder(cleanCheckout(form))
     if (!result?.ok) return
     navigate("orders")
   }
