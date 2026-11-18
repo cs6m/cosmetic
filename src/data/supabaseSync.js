@@ -65,12 +65,16 @@ function reportError(error, context) {
 async function refreshIdentity() {
   const { data } = await supabase.auth.getSession()
   const session = data?.session
-  userId = session?.user?.id || null
-  role = null
+  const nextUserId = session?.user?.id || null
+  let nextRole = null
   if (session && !session.user.is_anonymous) {
-    const { data: profile } = await supabase.from("profiles").select("role, active").eq("id", userId).maybeSingle()
-    if (profile?.active && (profile.role === "admin" || profile.role === "staff")) role = profile.role
+    const { data: profile } = await supabase.from("profiles").select("role, active").eq("id", nextUserId).maybeSingle()
+    if (profile?.active && (profile.role === "admin" || profile.role === "staff")) nextRole = profile.role
   }
+  // Assign only after the profile read. Clearing role first made a hydrate in that gap
+  // load orders as a guest, so a phone order never appeared on the admin laptop.
+  userId = nextUserId
+  role = nextRole
 }
 
 async function ensureSession() {
@@ -173,10 +177,9 @@ function replayOnto(base, prev, next) {
   return merged
 }
 
-async function readSnapshot() {
+async function readSnapshot(staff) {
   let results = []
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const staff = Boolean(role)
     results = await Promise.all(TABLES.map(async (entry) => [entry, entry.staffOnly && !staff ? [] : await fetchAll(entry)]))
     if (results.every(([, rows]) => rows !== null)) return { results, failed: false }
     await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)))
@@ -188,7 +191,8 @@ export function hydrate() {
   if (!supabase || !bridge) return Promise.resolve(false)
   if (hydrating) return hydrating
   hydrating = (async () => {
-    const { results, failed } = await readSnapshot()
+    const asStaff = Boolean(role)
+    const { results, failed } = await readSnapshot(asStaff)
     let next = bridge.get()
     // Tables are applied in dependency order (categories before subcategories, …).
     for (const [entry, rows] of results) {
@@ -217,6 +221,12 @@ export function hydrate() {
       return true
     }
     bridge.setRemote(next)
+    // Login finished while this read was still a guest read. Run once more as staff
+    // so every storefront order is on the admin screen.
+    if (Boolean(role) !== asStaff) {
+      hydrating = null
+      return hydrate()
+    }
     return !failed
   })()
     .catch((error) => {
@@ -275,6 +285,12 @@ function applyRow(entry, payload) {
 function onChange(entry, payload) {
   if (pending > 0) {
     dirty.add(entry.table) // we are mid-write; reconcile when it finishes
+    return
+  }
+  if (entry.table === "orders" && role) {
+    // Staff must reload the whole table. A single realtime payload can be partial, and a
+    // guest session would not be allowed to see another shopper's new order.
+    scheduleRefetch(entry)
     return
   }
   if (entry.incremental) applyRow(entry, payload)
@@ -489,10 +505,19 @@ export function attachSync(api) {
       startRealtime()
       supabase.auth.onAuthStateChange((event, session) => {
         if (session?.access_token) supabase.realtime.setAuth(session.access_token)
-        if (event === "SIGNED_IN" || event === "SIGNED_OUT") {
+        if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "TOKEN_REFRESHED") {
           refreshIdentity().then(() => hydrate()).then(() => restartRealtime())
         }
       })
+      window.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible" && role) {
+          refetchTable(TABLE_BY_NAME.orders).catch((error) => reportError(error, "refresh orders"))
+        }
+      })
+      window.setInterval(() => {
+        if (!role) return
+        refetchTable(TABLE_BY_NAME.orders).catch((error) => reportError(error, "refresh orders"))
+      }, 5000)
     } catch (error) {
       reportError(error, "start-up")
       if (!remoteReady) readyReject(error)

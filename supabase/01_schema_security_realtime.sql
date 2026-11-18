@@ -131,6 +131,9 @@ create table if not exists public.customers (
   updated_at    timestamptz not null default now()
 );
 create unique index if not exists customers_email_key on public.customers (lower(email));
+-- Ties a checkout profile to the anonymous (or signed-in) shopper. Admins are not limited by it.
+alter table public.customers add column if not exists owner_id uuid default auth.uid() references auth.users (id) on delete set null;
+create index if not exists customers_owner_idx on public.customers (owner_id);
 
 create sequence if not exists public.order_number_seq start with 5000;
 
@@ -396,10 +399,7 @@ begin
     return new;
   end if;
 
-  if auth.uid() is null then
-    raise exception 'Sign-in required' using errcode = '42501';
-  end if;
-
+  -- Anonymous checkout may have no auth user yet. A session, when present, still owns the row.
   new.owner_id          := auth.uid();
   new.status            := 'pending';
   new.source            := 'storefront';
@@ -554,41 +554,117 @@ create policy "brands product managers update" on public.brands for update to au
 drop policy if exists "brands product managers delete" on public.brands;
 create policy "brands product managers delete" on public.brands for delete to authenticated using (public.has_permission('products'));
 
--- Products: guests see active ones only; staff see everything.
+-- Products, brands, categories, banners: anyone may read the public catalogue.
+-- Hidden products stay hidden. Writes are admin (or the matching admin permission) only.
 drop policy if exists "products public read" on public.products;
 create policy "products public read" on public.products for select to anon, authenticated
-  using (status = 'active' or public.is_staff());
+  using (status = 'active' or public.is_admin() or public.has_permission('products') or public.has_permission('orders'));
 drop policy if exists "products admin insert" on public.products;
-create policy "products admin insert" on public.products for insert to authenticated with check (public.has_permission('products'));
+create policy "products admin insert" on public.products for insert to authenticated
+  with check (public.is_admin() or public.has_permission('products'));
 drop policy if exists "products admin update" on public.products;
 create policy "products admin update" on public.products for update to authenticated
-  using (public.has_permission('products') or public.has_permission('orders'))
-  with check (public.has_permission('products') or public.has_permission('orders'));   -- orders: stock moves on delivery/return
+  using (public.is_admin() or public.has_permission('products') or public.has_permission('orders'))
+  with check (public.is_admin() or public.has_permission('products') or public.has_permission('orders')); -- orders: stock moves on delivery/return
 drop policy if exists "products admin delete" on public.products;
-create policy "products admin delete" on public.products for delete to authenticated using (public.has_permission('products.delete'));
+create policy "products admin delete" on public.products for delete to authenticated
+  using (public.is_admin() or public.has_permission('products.delete'));
 
--- Customers (personal data): staff only.
+-- Brands / categories / banners are already granted public read + permissioned writes above.
+-- Repeat them with an explicit admin check so a full admin is never blocked by a permission string.
+drop policy if exists "brands public read" on public.brands;
+create policy "brands public read" on public.brands for select to anon, authenticated using (true);
+drop policy if exists "brands admin insert" on public.brands;
+create policy "brands admin insert" on public.brands for insert to authenticated
+  with check (public.is_admin() or public.has_permission('brands') or public.has_permission('products'));
+drop policy if exists "brands admin update" on public.brands;
+create policy "brands admin update" on public.brands for update to authenticated
+  using (public.is_admin() or public.has_permission('brands') or public.has_permission('products'))
+  with check (public.is_admin() or public.has_permission('brands') or public.has_permission('products'));
+drop policy if exists "brands admin delete" on public.brands;
+create policy "brands admin delete" on public.brands for delete to authenticated
+  using (public.is_admin() or public.has_permission('brands') or public.has_permission('products'));
+
+drop policy if exists "categories public read" on public.categories;
+create policy "categories public read" on public.categories for select to anon, authenticated using (true);
+drop policy if exists "categories admin insert" on public.categories;
+create policy "categories admin insert" on public.categories for insert to authenticated
+  with check (public.is_admin() or public.has_permission('categories'));
+drop policy if exists "categories admin update" on public.categories;
+create policy "categories admin update" on public.categories for update to authenticated
+  using (public.is_admin() or public.has_permission('categories'))
+  with check (public.is_admin() or public.has_permission('categories'));
+drop policy if exists "categories admin delete" on public.categories;
+create policy "categories admin delete" on public.categories for delete to authenticated
+  using (public.is_admin() or public.has_permission('categories'));
+
+drop policy if exists "banners public read" on public.banners;
+create policy "banners public read" on public.banners for select to anon, authenticated using (true);
+drop policy if exists "banners admin insert" on public.banners;
+create policy "banners admin insert" on public.banners for insert to authenticated
+  with check (public.is_admin() or public.has_permission('settings'));
+drop policy if exists "banners admin update" on public.banners;
+create policy "banners admin update" on public.banners for update to authenticated
+  using (public.is_admin() or public.has_permission('settings'))
+  with check (public.is_admin() or public.has_permission('settings'));
+drop policy if exists "banners admin delete" on public.banners;
+create policy "banners admin delete" on public.banners for delete to authenticated
+  using (public.is_admin() or public.has_permission('settings'));
+
+-- Customers: a guest may save their own checkout profile. They cannot read or edit anyone else's.
+-- Admins (and staff granted the customers permission) manage the full list.
 drop policy if exists "customers staff read" on public.customers;
-create policy "customers staff read" on public.customers for select to authenticated using (public.is_staff());
 drop policy if exists "customers admin insert" on public.customers;
-create policy "customers admin insert" on public.customers for insert to authenticated with check (public.has_permission('customers') or public.has_permission('orders'));
 drop policy if exists "customers admin update" on public.customers;
-create policy "customers admin update" on public.customers for update to authenticated using (public.has_permission('customers')) with check (public.has_permission('customers'));
 drop policy if exists "customers admin delete" on public.customers;
-create policy "customers admin delete" on public.customers for delete to authenticated using (public.has_permission('customers'));
+drop policy if exists "customers public read" on public.customers;
+drop policy if exists "customers checkout insert" on public.customers;
+drop policy if exists "customers checkout update" on public.customers;
+drop policy if exists "customers read own or admin" on public.customers;
 
--- Orders: a shopper reads/creates only their own; staff manage all.
+create policy "customers read own or admin" on public.customers for select to anon, authenticated
+  using (public.is_admin() or public.has_permission('customers') or owner_id = auth.uid());
+create policy "customers checkout insert" on public.customers for insert to anon, authenticated
+  with check (
+    public.is_admin()
+    or public.has_permission('customers')
+    or owner_id is null
+    or owner_id = auth.uid()
+  );
+create policy "customers checkout update" on public.customers for update to anon, authenticated
+  using (public.is_admin() or public.has_permission('customers') or owner_id = auth.uid())
+  with check (public.is_admin() or public.has_permission('customers') or owner_id = auth.uid());
+create policy "customers admin delete" on public.customers for delete to authenticated
+  using (public.is_admin() or public.has_permission('customers'));
+
+-- Orders: anyone may place a pending storefront order. Listing and fulfilment stay with admins.
+-- The shopper who owns the row can still read it back (required for checkout confirmation).
 drop policy if exists "orders read own or staff" on public.orders;
-create policy "orders read own or staff" on public.orders for select to anon, authenticated
-  using (owner_id = auth.uid() or public.is_staff());
 drop policy if exists "orders create own" on public.orders;
-create policy "orders create own" on public.orders for insert to anon, authenticated
-  with check ((owner_id = auth.uid() and source = 'storefront' and status = 'pending') or public.has_permission('orders'));
 drop policy if exists "orders staff update" on public.orders;
-create policy "orders staff update" on public.orders for update to authenticated
-  using (public.has_permission('orders')) with check (public.has_permission('orders'));
 drop policy if exists "orders staff delete" on public.orders;
-create policy "orders staff delete" on public.orders for delete to authenticated using (public.has_permission('orders'));
+drop policy if exists "orders read own or admin" on public.orders;
+drop policy if exists "orders checkout insert" on public.orders;
+drop policy if exists "orders admin update" on public.orders;
+drop policy if exists "orders admin delete" on public.orders;
+
+create policy "orders read own or admin" on public.orders for select to anon, authenticated
+  using (public.is_admin() or public.has_permission('orders') or owner_id = auth.uid());
+create policy "orders checkout insert" on public.orders for insert to anon, authenticated
+  with check (
+    public.is_admin()
+    or public.has_permission('orders')
+    or (
+      status = 'pending'
+      and source = 'storefront'
+      and (owner_id is null or owner_id = auth.uid())
+    )
+  );
+create policy "orders admin update" on public.orders for update to authenticated
+  using (public.is_admin() or public.has_permission('orders'))
+  with check (public.is_admin() or public.has_permission('orders'));
+create policy "orders admin delete" on public.orders for delete to authenticated
+  using (public.is_admin() or public.has_permission('orders'));
 
 -- Reviews: the public sees approved ones; an author sees their own; moderators see all.
 drop policy if exists "reviews read" on public.reviews;
@@ -675,4 +751,5 @@ grant usage on schema public to anon, authenticated;
 grant select on all tables in schema public to anon, authenticated;
 grant insert, update, delete on all tables in schema public to authenticated;
 grant insert on public.orders, public.reviews to anon;
+grant insert, update on public.customers to anon;
 grant usage, select on all sequences in schema public to anon, authenticated;
