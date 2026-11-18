@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useSyncExternalStore } from "react"
 import { ICON_NAMES } from "../icons"
 import { normalizeGovernorates } from "../checkout"
-import { MEDIA_PUBLIC_PREFIX, supabaseConfigError } from "../lib/supabaseClient"
+import { MEDIA_PUBLIC_PREFIX, requireSupabase, supabaseConfigError } from "../lib/supabaseClient"
 import { placeOrder as insertStorefrontOrder } from "../services/customerService"
 import {
   attachSync,
   changeOwnPassword,
+  ensureSession,
   isStaffSession,
   pushChanges,
   rememberPassword,
   signInStaff,
   signOutStaff,
   syncEnabled,
-  waitForRemote,
 } from "./supabaseSync"
 import { getOfferProducts, brands as catalogBrands, categories as seedCategories, products as seedProducts, subcategories as seedSubs, toIqd } from "./catalog"
 
@@ -1216,23 +1216,27 @@ export function adoptStorefrontOrder(order) {
 }
 
 export async function recordStorefrontOrder(order) {
-  if (supabaseConfigError) {
-    const error = new Error(supabaseConfigError)
-    throw error
+  if (supabaseConfigError || !syncEnabled) {
+    throw new Error(supabaseConfigError || "Supabase is not configured, so the order was not stored on this device.")
   }
-  if (syncEnabled) {
-    await waitForRemote()
-    const saved = await insertStorefrontOrder(order)
-    return adoptStorefrontOrder(saved)
-  }
-  const db = ensure()
-  if (db.orders.some((item) => item.id === order.id)) return order
-  const next = normalizeShopOrder({ ...order, status: "pending", source: "storefront" })
-  const customers = db.customers.some((item) => item.id === "guest-store")
-    ? db.customers
-    : [...db.customers, seedCustomers().find((item) => item.id === "guest-store")]
-  commit({ ...db, customers, orders: [next, ...db.orders] })
-  return next
+  // A stuck catalog load must not keep the order on this phone. Write it as soon as there is a session.
+  await ensureSession()
+  const client = requireSupabase()
+  const buyer = order.customer || {}
+  const { error: customerError } = await client.from("customers").upsert(
+    {
+      id: "guest-store",
+      name: buyer.name || "Store guest",
+      email: "guest@glowora.shop",
+      phone: buyer.phone || "",
+      city: buyer.city || "",
+    },
+    { onConflict: "id" },
+  )
+  if (customerError) throw new Error(customerError.message)
+  const saved = await insertStorefrontOrder(order)
+  if (!saved?.id) throw new Error("The database did not return the new order.")
+  return adoptStorefrontOrder(saved)
 }
 
 const FLOW = {

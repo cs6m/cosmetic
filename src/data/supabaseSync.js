@@ -77,7 +77,7 @@ async function refreshIdentity() {
   role = nextRole
 }
 
-async function ensureSession() {
+export async function ensureSession() {
   const client = requireSupabase()
   const { data } = await client.auth.getSession()
   if (data?.session) return data.session

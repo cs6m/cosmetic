@@ -27,6 +27,8 @@ export default function CheckoutScreen() {
   const [form, setForm] = useState(EMPTY)
   const [errors, setErrors] = useState({})
   const [attempt, setAttempt] = useState(0)
+  const [formError, setFormError] = useState("")
+  const [sending, setSending] = useState(false)
   const formRef = useRef(null)
   const city = governorates.find((item) => item.id === form.city)
   const shipping = city?.enabled ? deliveryFee(city.id, governorates, subtotal) : 0
@@ -67,8 +69,14 @@ export default function CheckoutScreen() {
       setAttempt((count) => count + 1)
       return
     }
+    setFormError("")
+    setSending(true)
     const result = await placeOrder(cleanCheckout(form))
-    if (!result?.ok) return
+    setSending(false)
+    if (!result?.ok) {
+      setFormError(result.message || (language === "ar" ? "ما انحفظ الطلب بقاعدة البيانات." : "The order was not saved to the database."))
+      return
+    }
     navigate("orders")
   }
 
@@ -180,8 +188,13 @@ export default function CheckoutScreen() {
           </div>
         </dl>
         <p className="mt-2 text-[11px] text-muted">{t("shippingNote")}</p>
-        <button type="submit" className="mt-4 h-12 w-full rounded-full bg-espresso text-sm text-white">
-          {t("confirmOrder")}
+        {formError && (
+          <p role="alert" className="mt-3 text-sm font-medium text-[#9a4d45]">
+            {formError}
+          </p>
+        )}
+        <button type="submit" disabled={sending} className="mt-4 h-12 w-full rounded-full bg-espresso text-sm text-white disabled:opacity-60">
+          {sending ? (language === "ar" ? "جاري الإرسال…" : "Sending…") : t("confirmOrder")}
         </button>
       </section>
     </form>

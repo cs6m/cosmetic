@@ -438,9 +438,8 @@ export function ShopProvider({ children }) {
     }
     try {
       const saved = await recordStorefrontOrder(order)
-      const placed = { ...order, ...saved, id: saved?.id || order.id }
+      const placed = { ...order, ...saved, id: saved.id }
       setOrderHistory((list) => [placed, ...list.filter((item) => item.id !== placed.id)])
-      if (!syncEnabled) saveOrders([placed, ...orderHistory.filter((item) => item.id !== placed.id)])
       setCart({})
       return { ok: true, id: placed.id }
     } catch (error) {
