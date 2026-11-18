@@ -853,6 +853,12 @@ export function ensure() {
     return state
   }
   if (syncEnabled) {
+    try {
+      localStorage.removeItem(KEY)
+      localStorage.removeItem(SHOP_ORDERS)
+    } catch {
+      /* storage can be unavailable */
+    }
     state = remoteShell()
     startLiveSync()
     return state
@@ -1236,6 +1242,9 @@ export async function recordStorefrontOrder(order) {
   if (customerError) throw new Error(customerError.message)
   const saved = await insertStorefrontOrder(order)
   if (!saved?.id) throw new Error("The database did not return the new order.")
+  const { data: persisted, error: readError } = await client.from("orders").select("id").eq("id", saved.id).maybeSingle()
+  if (readError) throw new Error(readError.message)
+  if (!persisted?.id) throw new Error("The order was not found in the database after it was sent.")
   return adoptStorefrontOrder(saved)
 }
 

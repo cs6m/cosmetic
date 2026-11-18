@@ -409,6 +409,10 @@ begin
   new.placed_at         := now();
   new.history           := jsonb_build_array(jsonb_build_object('status', 'pending', 'at', now(), 'by', 'storefront'));
 
+  insert into public.customers (id, name, email, phone, city)
+  values ('guest-store', 'Store guest', 'guest@glowora.shop', '', '')
+  on conflict (id) do nothing;
+
   if jsonb_typeof(new.items) <> 'array' or jsonb_array_length(new.items) not between 1 and 50 then
     raise exception 'Order needs between 1 and 50 items' using errcode = '22023';
   end if;

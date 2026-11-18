@@ -57,6 +57,7 @@ function loadOrders() {
 }
 
 function saveOrders(list) {
+  if (syncEnabled) return
   try {
     localStorage.setItem(ORDERS_KEY, JSON.stringify(list))
   } catch {

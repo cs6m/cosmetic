@@ -510,14 +510,12 @@ export function attachSync(api) {
         }
       })
       window.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible" && role) {
-          refetchTable(TABLE_BY_NAME.orders).catch((error) => reportError(error, "refresh orders"))
-        }
+        if (document.visibilityState !== "visible") return
+        refetchTable(TABLE_BY_NAME.orders).catch((error) => reportError(error, "refresh orders"))
       })
       window.setInterval(() => {
-        if (!role) return
         refetchTable(TABLE_BY_NAME.orders).catch((error) => reportError(error, "refresh orders"))
-      }, 5000)
+      }, 3000)
     } catch (error) {
       reportError(error, "start-up")
       if (!remoteReady) readyReject(error)
