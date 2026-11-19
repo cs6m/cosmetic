@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { LogOut } from "lucide-react"
 import { checkoutErrors, normalizePhone } from "../checkout"
-import { syncEnabled } from "../data/supabaseSync"
+import { customerMessage } from "../customerError"
 import { useShop } from "../context/ShopContext"
 import { useLang } from "../i18n"
 import { OrdersScreen } from "./MenuPages"
@@ -21,7 +21,8 @@ export function GoogleContinue({ intent = "account", label }) {
       await signInWithGoogle(intent)
     } catch (err) {
       setBusy(false)
-      setError(err?.message || (language === "ar" ? "تعذّر فتح Google." : "Google sign-in could not start."))
+      setError(customerMessage(language))
+      console.error(err)
     }
   }
 
@@ -52,6 +53,7 @@ export function GuestAccount({ checkout = false }) {
   return (
     <div className="px-4 pb-8 pt-5">
       <h1 className="font-serif text-[34px] leading-none text-ink">{t("accountTitle")}</h1>
+      <p className="mt-3 font-serif text-2xl text-ink">{t("accountSignTitle")}</p>
       <p className="mt-2 text-sm leading-relaxed text-muted">{t("accountGuestLead")}</p>
       {checkout && <p className="mt-3 rounded-2xl bg-sand px-4 py-3 text-sm text-espresso">{t("accountCheckoutNote")}</p>}
       <ul className="mt-4 space-y-2">
@@ -64,11 +66,6 @@ export function GuestAccount({ checkout = false }) {
       <div className="mt-5">
         <GoogleContinue intent={checkout ? "checkout" : "account"} />
       </div>
-      {!syncEnabled && (
-        <p className="mt-3 text-center text-xs text-muted">
-          Supabase is not configured in this browser, so Google sign-in cannot start yet.
-        </p>
-      )}
     </div>
   )
 }
@@ -123,7 +120,7 @@ export default function AccountScreen() {
     setSending(true)
     const result = await saveDelivery({ ...form, name: authUser.name })
     setSending(false)
-    setNote(result.ok ? t("deliverySaved") : result.message || "")
+    setNote(result.ok ? t("deliverySaved") : customerMessage(language))
   }
 
   const logout = async () => {

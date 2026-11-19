@@ -2,10 +2,9 @@ import { useEffect, useRef, useState } from "react"
 import { Banknote, Check } from "lucide-react"
 import { checkoutErrors, cleanCheckout, deliveryFee, normalizePhone } from "../checkout"
 import { formatPrice, unitPrice } from "../data/catalog"
-import { syncEnabled } from "../data/supabaseSync"
+import { customerMessage } from "../customerError"
 import { useLang } from "../i18n"
 import { useShop } from "../context/ShopContext"
-import { GuestAccount } from "./AccountScreen"
 
 const EMPTY = {
   name: "",
@@ -24,7 +23,7 @@ const EMPTY = {
 const FIELD_ORDER = ["name", "phone", "city", "neighborhood", "street", "building", "mapLink"]
 
 export default function CheckoutScreen() {
-  const { cartItems, subtotal, bundleDeal, placeOrder, navigate, language, governorates, authUser, authReady, deliveryProfile } = useShop()
+  const { cartItems, subtotal, bundleDeal, placeOrder, navigate, language, governorates, authUser, deliveryProfile } = useShop()
   const t = useLang()
   const [form, setForm] = useState(EMPTY)
   const [errors, setErrors] = useState({})
@@ -34,16 +33,18 @@ export default function CheckoutScreen() {
   const formRef = useRef(null)
 
   useEffect(() => {
-    if (!authUser) return
+    if (!authUser || !deliveryProfile) return
+    const saved = [deliveryProfile.phone, deliveryProfile.city, deliveryProfile.neighborhood, deliveryProfile.street, deliveryProfile.building, deliveryProfile.details].some(Boolean)
+    if (!saved) return
     setForm((current) => ({
       ...current,
-      name: current.name || deliveryProfile?.name || authUser.name || "",
-      phone: current.phone || deliveryProfile?.phone || "",
-      city: current.city || deliveryProfile?.city || "",
-      neighborhood: current.neighborhood || deliveryProfile?.neighborhood || "",
-      street: current.street || deliveryProfile?.street || "",
-      building: current.building || deliveryProfile?.building || "",
-      details: current.details || deliveryProfile?.details || "",
+      name: current.name || deliveryProfile.name || authUser.name || "",
+      phone: current.phone || deliveryProfile.phone || "",
+      city: current.city || deliveryProfile.city || "",
+      neighborhood: current.neighborhood || deliveryProfile.neighborhood || "",
+      street: current.street || deliveryProfile.street || "",
+      building: current.building || deliveryProfile.building || "",
+      details: current.details || deliveryProfile.details || "",
     }))
   }, [authUser, deliveryProfile])
   const city = governorates.find((item) => item.id === form.city)
@@ -90,18 +91,10 @@ export default function CheckoutScreen() {
     const result = await placeOrder(cleanCheckout(form))
     setSending(false)
     if (!result?.ok) {
-      setFormError(result.message || (language === "ar" ? "ما انحفظ الطلب بقاعدة البيانات." : "The order was not saved to the database."))
+      setFormError(customerMessage(language))
       return
     }
     navigate("orders")
-  }
-
-  if (syncEnabled && !authReady) {
-    return <p className="px-4 pt-8 text-sm text-muted">{t("accountLoading")}</p>
-  }
-
-  if (syncEnabled && !authUser) {
-    return <GuestAccount checkout />
   }
 
   if (!cartItems.length) {

@@ -4,7 +4,14 @@ import { ensure, localizeProduct, recordStorefrontOrder, useDb, useStorefront } 
 import { supabase, supabaseConfigError } from "../lib/supabaseClient"
 import { getUserId, signOutStaff, syncEnabled } from "../data/supabaseSync"
 import { getMyCustomer, upsertMyCustomer } from "../services/customerService"
+import { customerMessage, reportCustomerError } from "../customerError"
 import { filterProducts, products as catalogProducts, unitPrice } from "../data/catalog"
+
+function isGoogleShopper(user) {
+  if (!user || user.is_anonymous) return false
+  const providers = user.app_metadata?.providers || []
+  return user.app_metadata?.provider === "google" || providers.includes("google")
+}
 
 const ShopContext = createContext(null)
 const ORDERS_KEY = "glowora-orders"
@@ -23,7 +30,7 @@ function loadCart() {
 
 function publicUser(session) {
   const user = session?.user
-  if (!user || user.is_anonymous) return null
+  if (!isGoogleShopper(user)) return null
   const meta = user.user_metadata || {}
   return {
     id: user.id,
@@ -101,6 +108,7 @@ export function ShopProvider({ children }) {
   const [deliveryProfile, setDeliveryProfile] = useState(null)
   const [authIntent, setAuthIntent] = useState("")
   const sessionUserRef = useRef(null)
+  const droppingDemo = useRef(false)
   const [wishlist, setWishlist] = useState(["vitamin-c-serum"])
   const [cartOpen, setCartOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -212,7 +220,8 @@ export function ShopProvider({ children }) {
         saveOrders(next)
         return next
       })
-      notify(language === "ar" ? "تعذّر إرسال الطلب. حاولي مرة أخرى." : "We couldn't place your order. Please try again.")
+      console.error(event.detail)
+      notify(customerMessage(language))
     }
     window.addEventListener("glowora-order-renamed", renamed)
     window.addEventListener("glowora-order-failed", failed)
@@ -256,8 +265,23 @@ export function ShopProvider({ children }) {
   }, [cart])
 
   const applySession = useCallback((session) => {
-    const user = session?.user && !session.user.is_anonymous ? session.user : null
-    sessionUserRef.current = user
+    const raw = session?.user
+    if (raw && !raw.is_anonymous && !isGoogleShopper(raw)) {
+      sessionUserRef.current = null
+      setAuthUser(null)
+      setAuthReady(true)
+      if (!droppingDemo.current) {
+        droppingDemo.current = true
+        signOutStaff()
+          .catch((error) => console.error(error))
+          .finally(() => {
+            droppingDemo.current = false
+          })
+      }
+      return
+    }
+    const shopper = isGoogleShopper(raw) ? raw : null
+    sessionUserRef.current = shopper
     const next = publicUser(session)
     setAuthUser((current) => {
       if (current?.id === next?.id && current?.email === next?.email && current?.name === next?.name && current?.avatar === next?.avatar) return current
@@ -521,7 +545,9 @@ export function ShopProvider({ children }) {
 
   const signInWithGoogle = async (intent = "account") => {
     if (!supabase) {
-      throw new Error(supabaseConfigError || "Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.")
+      const error = new Error(supabaseConfigError || "Supabase is not configured.")
+      console.error(error)
+      throw error
     }
     try {
       sessionStorage.setItem(AUTH_INTENT, intent)
@@ -533,7 +559,10 @@ export function ShopProvider({ children }) {
       provider: "google",
       options: { redirectTo: window.location.origin },
     })
-    if (error) throw error
+    if (error) {
+      console.error(error)
+      throw error
+    }
   }
 
   const signOutCustomer = async () => {
@@ -551,33 +580,26 @@ export function ShopProvider({ children }) {
 
   const saveDelivery = async (form) => {
     const user = sessionUserRef.current
-    if (!user) return { ok: false, message: language === "ar" ? "سجّلي الدخول أولاً." : "Sign in first." }
+    if (!user) return { ok: false }
     try {
       const saved = await upsertMyCustomer(user, { ...form, name: form.name || authUser?.name || user.email })
       setDeliveryProfile(saved)
       return { ok: true }
     } catch (error) {
-      return { ok: false, message: error?.message }
+      console.error(error)
+      return { ok: false }
     }
   }
 
   const requestCheckout = () => {
-    if (syncEnabled && !authUser) {
-      try {
-        sessionStorage.setItem(AUTH_INTENT, "checkout")
-      } catch {
-        /* storage can be unavailable */
-      }
-      setAuthIntent("checkout")
-      navigate("account")
-      return
-    }
     navigate("checkout")
   }
 
   const placeOrder = async (form) => {
-    if (supabaseConfigError) return { ok: false, reason: "config", message: supabaseConfigError }
-    if (syncEnabled && !sessionUserRef.current) return { ok: false, reason: "auth" }
+    if (supabaseConfigError) {
+      console.error(supabaseConfigError)
+      return { ok: false, reason: "config" }
+    }
     if (!cartCount) return { ok: false, reason: "empty" }
     if (Object.keys(checkoutErrors(form || {}, governorates)).length) return { ok: false, reason: "invalid" }
     const customer = cleanCheckout(form)
@@ -619,8 +641,8 @@ export function ShopProvider({ children }) {
       setCart({})
       return { ok: true, id: placed.id }
     } catch (error) {
-      notify(language === "ar" ? "تعذّر إرسال الطلب. حاولي مرة أخرى." : error?.message || "We couldn't place your order. Please try again.")
-      return { ok: false, reason: "sync", message: error?.message }
+      notify(reportCustomerError(error, language))
+      return { ok: false, reason: "sync" }
     }
   }
 

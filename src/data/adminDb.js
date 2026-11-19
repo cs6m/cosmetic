@@ -1228,11 +1228,12 @@ export async function recordStorefrontOrder(order) {
   // A stuck catalog load must not keep the order on this phone. Write it as soon as there is a session.
   const session = await ensureSession()
   const user = session?.user
-  if (!user || user.is_anonymous) {
-    throw new Error("Sign in with Google before placing an order.")
-  }
-  await upsertMyCustomer(user, order.customer || {})
-  const linked = { ...order, customerId: user.id, ownerId: user.id }
+  const providers = user?.app_metadata?.providers || []
+  const googleShopper = Boolean(user && !user.is_anonymous && (user.app_metadata?.provider === "google" || providers.includes("google")))
+  const linked = googleShopper
+    ? { ...order, customerId: user.id, ownerId: user.id }
+    : { ...order, customerId: "guest-store", ownerId: user?.id || null }
+  if (googleShopper) await upsertMyCustomer(user, order.customer || {})
   const client = requireSupabase()
   const saved = await insertStorefrontOrder(linked)
   if (!saved?.id) throw new Error("The database did not return the new order.")

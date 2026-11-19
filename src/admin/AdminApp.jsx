@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import { login, logout, permissionsOf, sessionUser, useDb } from "../data/adminDb"
 import { supabaseConfigError } from "../lib/supabaseClient"
+import { customerMessage } from "../customerError"
 import { translate } from "./copy"
 import { AdminContext } from "./context"
 import Brands from "./pages/Brands"
@@ -81,10 +82,13 @@ export default function AdminApp() {
 
   // Anything the database refuses (permissions, validation, network) is shown to the admin.
   useEffect(() => {
-    const show = (event) => notify(event.detail?.message || "Sync error")
+    const show = (event) => {
+      console.error(event.detail)
+      notify(customerMessage(language))
+    }
     window.addEventListener("glowora-sync-error", show)
     return () => window.removeEventListener("glowora-sync-error", show)
-  }, [])
+  }, [language])
 
   const t = (key) => translate(language, key)
   const can = (permission) => (user ? permissionsOf(user).includes(permission) : false)
@@ -263,7 +267,7 @@ function Denied({ t }) {
 }
 
 function Login({ language, t, onLanguage, onSuccess, onLeave }) {
-  const [email, setEmail] = useState("admin@glowora.com")
+  const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
@@ -274,11 +278,8 @@ function Login({ language, t, onLanguage, onSuccess, onLeave }) {
     const result = await login(email, password)
     setBusy(false)
     if (!result.ok) {
-      setError(
-        result.reason === "config"
-          ? supabaseConfigError
-          : t(result.reason === "customer" ? "customerBlocked" : result.reason === "locked" ? "locked" : "invalid"),
-      )
+      if (result.reason === "config") console.error(supabaseConfigError)
+      setError(result.reason === "config" ? customerMessage(language) : t(result.reason === "customer" ? "customerBlocked" : result.reason === "locked" ? "locked" : "invalid"))
       return
     }
     onSuccess()
@@ -317,18 +318,10 @@ function Login({ language, t, onLanguage, onSuccess, onLeave }) {
             className="mt-1.5 w-full rounded-xl border border-[#3a2d26] bg-[#120f0d] px-3 py-2.5 text-sm text-[#f6f1eb] outline-none focus:border-[#c6a15b]"
           />
         </label>
-        {supabaseConfigError && <p className="mt-3 text-sm leading-relaxed text-[#f0c2b8]">{supabaseConfigError}</p>}
         {error && <p className="mt-3 text-sm text-[#f0c2b8]">{error}</p>}
         <button type="submit" disabled={busy} className="mt-5 w-full rounded-full bg-[#c6a15b] py-3 text-sm font-medium text-[#2a1c16] disabled:opacity-60">
           {t("signIn")}
         </button>
-        <div className="mt-5 rounded-2xl bg-[#120f0d] p-3 text-xs leading-relaxed text-[#b5a194]">
-          <p className="text-[#e7d3c4]">{t("demoHint")}</p>
-          <p className="mt-1">admin@glowora.com · Glowora#Admin — {t("demoAdmin")}</p>
-          <p>staff@glowora.com · Glowora#Staff — {t("demoStaff")}</p>
-          <p>maya@glowora.com · Glowora#Staff — {t("demoMaya")}</p>
-          <p className="mt-2">{t("sessionNote")}</p>
-        </div>
         <button type="button" onClick={onLeave} className="mt-4 text-xs text-[#b5a194]">
           {t("backToStore")}
         </button>

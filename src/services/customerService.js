@@ -104,7 +104,11 @@ export async function getMyCustomer(userId) {
 export async function upsertMyCustomer(user, form = {}) {
   const meta = user.user_metadata || {}
   const email = String(user.email || form.email || "").trim()
-  if (!email) throw new Error("This Google account has no email address.")
+  if (!email) {
+    const missing = new Error("This Google account has no email address.")
+    console.error(missing)
+    throw missing
+  }
   const row = {
     id: user.id,
     owner_id: user.id,
@@ -119,9 +123,7 @@ export async function upsertMyCustomer(user, form = {}) {
   }
   const { data, error } = await supabase.from("customers").upsert(row, { onConflict: "id" }).select("*").single()
   if (error) {
-    if (/address_details|neighborhood|customers_owner_key/i.test(error.message || "")) {
-      throw new Error("Run supabase/03_customer_profile.sql in the Supabase SQL editor, then try again.")
-    }
+    console.error(error)
     throw error
   }
   return mapCustomer(data)

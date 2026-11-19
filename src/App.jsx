@@ -20,7 +20,6 @@ import MenuSheet from "./components/MenuSheet"
 import ProductDetail from "./components/ProductDetail"
 import WishlistScreen from "./components/WishlistScreen"
 import { Toast } from "./components/ui"
-import { supabaseConfigError } from "./lib/supabaseClient"
 
 function Shell() {
   const shop = useShop()
@@ -42,9 +41,6 @@ function Shell() {
 
   return (
     <div className="min-h-dvh bg-[radial-gradient(circle_at_top,#fbf6f0,#e6d8cb)] sm:flex sm:items-center sm:justify-center sm:py-6">
-      {supabaseConfigError && (
-        <p className="fixed inset-x-0 top-0 z-50 bg-[#5c3a32] px-4 py-2 text-center text-xs leading-relaxed text-white">{supabaseConfigError}</p>
-      )}
       <div
         dir={shop.language === "ar" ? "rtl" : "ltr"}
         lang={shop.language}

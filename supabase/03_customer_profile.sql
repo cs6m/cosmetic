@@ -51,6 +51,5 @@ create policy "orders checkout insert" on public.orders for insert to anon, auth
       status = 'pending'
       and source = 'storefront'
       and owner_id = auth.uid()
-      and coalesce(auth.jwt() ->> 'is_anonymous', 'false') <> 'true'
     )
   );
