@@ -1,12 +1,37 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { checkoutErrors, cleanCheckout, deliveryFee, normalizeGovernorates } from "../checkout"
 import { ensure, localizeProduct, recordStorefrontOrder, useDb, useStorefront } from "../data/adminDb"
-import { supabaseConfigError } from "../lib/supabaseClient"
-import { syncEnabled } from "../data/supabaseSync"
+import { supabase, supabaseConfigError } from "../lib/supabaseClient"
+import { getUserId, signOutStaff, syncEnabled } from "../data/supabaseSync"
+import { getMyCustomer, upsertMyCustomer } from "../services/customerService"
 import { filterProducts, products as catalogProducts, unitPrice } from "../data/catalog"
 
 const ShopContext = createContext(null)
 const ORDERS_KEY = "glowora-orders"
+const CART_KEY = "glowora-cart"
+const AUTH_INTENT = "glowora-auth-intent"
+
+function loadCart() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CART_KEY) || "null")
+    if (saved && typeof saved === "object" && !Array.isArray(saved)) return saved
+  } catch {
+    /* storage can be unavailable */
+  }
+  return {}
+}
+
+function publicUser(session) {
+  const user = session?.user
+  if (!user || user.is_anonymous) return null
+  const meta = user.user_metadata || {}
+  return {
+    id: user.id,
+    email: user.email || "",
+    name: meta.full_name || meta.name || user.email || "",
+    avatar: meta.avatar_url || meta.picture || "",
+  }
+}
 
 function orderLine(id, qty) {
   const product = catalogProducts.find((item) => item.id === id)
@@ -70,7 +95,12 @@ export function ShopProvider({ children }) {
   const [returnTo, setReturnTo] = useState("home")
   const [activeId, setActiveId] = useState(catalogProducts[0].id)
   const storefront = useStorefront()
-  const [cart, setCart] = useState({})
+  const [cart, setCart] = useState(loadCart)
+  const [authUser, setAuthUser] = useState(null)
+  const [authReady, setAuthReady] = useState(!supabase)
+  const [deliveryProfile, setDeliveryProfile] = useState(null)
+  const [authIntent, setAuthIntent] = useState("")
+  const sessionUserRef = useRef(null)
   const [wishlist, setWishlist] = useState(["vitamin-c-serum"])
   const [cartOpen, setCartOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -133,18 +163,23 @@ export function ShopProvider({ children }) {
   const liveDb = useDb()
   useEffect(() => {
     if (syncEnabled) {
+      const uid = getUserId()
       setOrderHistory(
-        liveDb.orders.map((order) => ({
-          id: order.id,
-          date: order.date,
-          status: order.status,
-          items: order.items || [],
-          total: order.total,
-          subtotal: order.subtotal,
-          shipping: order.shipping,
-          customer: order.customer,
-          source: order.source,
-        })),
+        liveDb.orders
+          .filter((order) => uid && (order.ownerId === uid || order.customerId === uid))
+          .map((order) => ({
+            id: order.id,
+            date: order.date,
+            status: order.status,
+            items: order.items || [],
+            total: order.total,
+            subtotal: order.subtotal,
+            shipping: order.shipping,
+            customer: order.customer,
+            customerId: order.customerId,
+            ownerId: order.ownerId,
+            source: order.source,
+          })),
       )
       return
     }
@@ -211,6 +246,84 @@ export function ShopProvider({ children }) {
   const activeProduct = allProducts.find((item) => item.id === activeId) ?? allProducts[0] ?? (liveCatalog ? null : catalogProducts[0])
   const wishedProducts = shelf.filter((item) => wishlist.includes(item.id))
   const visibleProducts = filterProducts({ query, category, subcategory, sort, brand, source: shelf, lookups: searchLookups })
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CART_KEY, JSON.stringify(cart))
+    } catch {
+      /* storage can be unavailable */
+    }
+  }, [cart])
+
+  const applySession = useCallback((session) => {
+    const user = session?.user && !session.user.is_anonymous ? session.user : null
+    sessionUserRef.current = user
+    const next = publicUser(session)
+    setAuthUser((current) => {
+      if (current?.id === next?.id && current?.email === next?.email && current?.name === next?.name && current?.avatar === next?.avatar) return current
+      return next
+    })
+    setAuthReady(true)
+  }, [])
+
+  useEffect(() => {
+    if (!supabase) return undefined
+    let live = true
+    supabase.auth.getSession().then(({ data }) => {
+      if (live) applySession(data.session)
+    })
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (live) applySession(session)
+    })
+    return () => {
+      live = false
+      data.subscription.unsubscribe()
+    }
+  }, [applySession])
+
+  useEffect(() => {
+    if (!authUser) {
+      setDeliveryProfile(null)
+      return undefined
+    }
+    let live = true
+    getMyCustomer(authUser.id)
+      .then((profile) => {
+        if (live) setDeliveryProfile(profile)
+      })
+      .catch(() => {
+        if (live) setDeliveryProfile(null)
+      })
+    return () => {
+      live = false
+    }
+  }, [authUser?.id])
+
+  const resumedCheckout = useRef(false)
+  useEffect(() => {
+    if (!authReady || !authUser || resumedCheckout.current) return
+    let intent = ""
+    try {
+      intent = sessionStorage.getItem(AUTH_INTENT) || ""
+    } catch {
+      intent = ""
+    }
+    if (intent !== "checkout") return
+    resumedCheckout.current = true
+    try {
+      sessionStorage.removeItem(AUTH_INTENT)
+    } catch {
+      /* storage can be unavailable */
+    }
+    setAuthIntent("")
+    setBrand(null)
+    setOffer(null)
+    setMenuOpen(false)
+    setCartOpen(false)
+    setFiltersOpen(false)
+    setView("checkout")
+    setNavTick((tick) => tick + 1)
+  }, [authReady, authUser])
 
   const navigate = (next) => {
     if (next !== "shop") setBrand(null)
@@ -406,19 +519,78 @@ export function ShopProvider({ children }) {
     window.history.pushState({ ...state, index: indexRef.current }, "")
   }, [navKey])
 
+  const signInWithGoogle = async (intent = "account") => {
+    if (!supabase) {
+      throw new Error(supabaseConfigError || "Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.")
+    }
+    try {
+      sessionStorage.setItem(AUTH_INTENT, intent)
+    } catch {
+      /* storage can be unavailable */
+    }
+    setAuthIntent(intent)
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin },
+    })
+    if (error) throw error
+  }
+
+  const signOutCustomer = async () => {
+    if (!supabase) return
+    resumedCheckout.current = false
+    try {
+      sessionStorage.removeItem(AUTH_INTENT)
+    } catch {
+      /* storage can be unavailable */
+    }
+    setAuthIntent("")
+    await signOutStaff()
+    setDeliveryProfile(null)
+  }
+
+  const saveDelivery = async (form) => {
+    const user = sessionUserRef.current
+    if (!user) return { ok: false, message: language === "ar" ? "سجّلي الدخول أولاً." : "Sign in first." }
+    try {
+      const saved = await upsertMyCustomer(user, { ...form, name: form.name || authUser?.name || user.email })
+      setDeliveryProfile(saved)
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, message: error?.message }
+    }
+  }
+
+  const requestCheckout = () => {
+    if (syncEnabled && !authUser) {
+      try {
+        sessionStorage.setItem(AUTH_INTENT, "checkout")
+      } catch {
+        /* storage can be unavailable */
+      }
+      setAuthIntent("checkout")
+      navigate("account")
+      return
+    }
+    navigate("checkout")
+  }
+
   const placeOrder = async (form) => {
     if (supabaseConfigError) return { ok: false, reason: "config", message: supabaseConfigError }
+    if (syncEnabled && !sessionUserRef.current) return { ok: false, reason: "auth" }
     if (!cartCount) return { ok: false, reason: "empty" }
     if (Object.keys(checkoutErrors(form || {}, governorates)).length) return { ok: false, reason: "invalid" }
     const customer = cleanCheckout(form)
     const shipping = deliveryFee(customer.city, governorates, subtotal)
     const total = Math.round(subtotal + shipping)
     const taken = orderHistory.map((item) => Number(String(item.id).replace(/\D/g, ""))).filter((value) => value > 0)
+    const buyerId = sessionUserRef.current?.id || "guest-store"
     const order = {
       id: `GL-${Math.max(1049, ...taken, 0) + 1}`,
       date: new Date().toISOString(),
       status: "pending",
-      customerId: "guest-store",
+      customerId: buyerId,
+      ownerId: sessionUserRef.current?.id || null,
       source: "storefront",
       customer,
       payment: "cod",
@@ -439,6 +611,9 @@ export function ShopProvider({ children }) {
     }
     try {
       const saved = await recordStorefrontOrder(order)
+      if (sessionUserRef.current) {
+        getMyCustomer(sessionUserRef.current.id).then(setDeliveryProfile).catch(() => {})
+      }
       const placed = { ...order, ...saved, id: saved.id }
       setOrderHistory((list) => [placed, ...list.filter((item) => item.id !== placed.id)])
       setCart({})
@@ -500,6 +675,14 @@ export function ShopProvider({ children }) {
     openBundles,
     openSearch,
     placeOrder,
+    requestCheckout,
+    authUser,
+    authReady,
+    authIntent,
+    deliveryProfile,
+    signInWithGoogle,
+    signOutCustomer,
+    saveDelivery,
     notify,
     catalogProducts: shelf,
     governorates,

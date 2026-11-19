@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from "react"
 import { Banknote, Check } from "lucide-react"
 import { checkoutErrors, cleanCheckout, deliveryFee, normalizePhone } from "../checkout"
 import { formatPrice, unitPrice } from "../data/catalog"
+import { syncEnabled } from "../data/supabaseSync"
 import { useLang } from "../i18n"
 import { useShop } from "../context/ShopContext"
+import { GuestAccount } from "./AccountScreen"
 
 const EMPTY = {
   name: "",
@@ -22,7 +24,7 @@ const EMPTY = {
 const FIELD_ORDER = ["name", "phone", "city", "neighborhood", "street", "building", "mapLink"]
 
 export default function CheckoutScreen() {
-  const { cartItems, subtotal, bundleDeal, placeOrder, navigate, language, governorates } = useShop()
+  const { cartItems, subtotal, bundleDeal, placeOrder, navigate, language, governorates, authUser, authReady, deliveryProfile } = useShop()
   const t = useLang()
   const [form, setForm] = useState(EMPTY)
   const [errors, setErrors] = useState({})
@@ -30,6 +32,20 @@ export default function CheckoutScreen() {
   const [formError, setFormError] = useState("")
   const [sending, setSending] = useState(false)
   const formRef = useRef(null)
+
+  useEffect(() => {
+    if (!authUser) return
+    setForm((current) => ({
+      ...current,
+      name: current.name || deliveryProfile?.name || authUser.name || "",
+      phone: current.phone || deliveryProfile?.phone || "",
+      city: current.city || deliveryProfile?.city || "",
+      neighborhood: current.neighborhood || deliveryProfile?.neighborhood || "",
+      street: current.street || deliveryProfile?.street || "",
+      building: current.building || deliveryProfile?.building || "",
+      details: current.details || deliveryProfile?.details || "",
+    }))
+  }, [authUser, deliveryProfile])
   const city = governorates.find((item) => item.id === form.city)
   const shipping = city?.enabled ? deliveryFee(city.id, governorates, subtotal) : 0
   const total = Math.round(subtotal + shipping)
@@ -78,6 +94,14 @@ export default function CheckoutScreen() {
       return
     }
     navigate("orders")
+  }
+
+  if (syncEnabled && !authReady) {
+    return <p className="px-4 pt-8 text-sm text-muted">{t("accountLoading")}</p>
+  }
+
+  if (syncEnabled && !authUser) {
+    return <GuestAccount checkout />
   }
 
   if (!cartItems.length) {

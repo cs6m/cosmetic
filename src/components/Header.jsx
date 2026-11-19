@@ -1,10 +1,10 @@
-import { ChevronLeft, ChevronRight, Heart, Menu, Search, ShoppingBag } from "lucide-react"
+import { ChevronLeft, ChevronRight, Heart, Menu, Search, ShoppingBag, User } from "lucide-react"
 import { useLang } from "../i18n"
 import { useShop } from "../context/ShopContext"
 import { IconButton, Logo } from "./ui"
 
 export default function Header() {
-  const { isRootView, setMenuOpen, setCartOpen, openSearch, navigate, cartCount, wishlist, goBack, language, toggleLanguage } = useShop()
+  const { isRootView, setMenuOpen, setCartOpen, openSearch, navigate, cartCount, wishlist, goBack, language, toggleLanguage, authUser } = useShop()
   const t = useLang()
   const BackIcon = language === "ar" ? ChevronRight : ChevronLeft
 
@@ -30,6 +30,14 @@ export default function Header() {
               className={`absolute inset-0 transition duration-200 ${isRootView ? "scale-75 opacity-0" : "scale-100 opacity-100"}`}
             />
           </span>
+        </button>
+        <button
+          type="button"
+          aria-label={t("navAccount")}
+          onClick={() => navigate("account")}
+          className="grid h-10 w-10 place-items-center overflow-hidden rounded-full bg-white text-espresso shadow-[0_6px_16px_rgba(92,58,50,0.08)] transition duration-200 hover:-translate-y-0.5 active:scale-95"
+        >
+          {authUser?.avatar ? <img src={authUser.avatar} alt="" className="h-full w-full object-cover" /> : <User size={18} />}
         </button>
         <button
           type="button"

@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { canReview, cmsText, submitReview, textOf, useDb, useStorefront } from "../data/adminDb"
+import { syncEnabled } from "../data/supabaseSync"
 import { formatPrice } from "../data/catalog"
 import { useShop } from "../context/ShopContext"
 import { useLang } from "../i18n"
@@ -61,16 +62,29 @@ export function BrandsScreen() {
   )
 }
 
-export function OrdersScreen() {
-  const { orderHistory, language } = useShop()
+export function OrdersScreen({ embedded = false }) {
+  const { orderHistory, language, authUser, authReady, navigate } = useShop()
   const db = useDb()
   const t = useLang()
   const locale = language === "ar" ? "ar" : "en"
+  const shell = embedded ? "" : "px-4 pb-6 pt-5"
+
+  if (syncEnabled && authReady && !authUser) {
+    return (
+      <div className={shell}>
+        {!embedded && <h1 className="font-serif text-[34px] leading-none text-ink">{t("ordersTitle")}</h1>}
+        <p className={`${embedded ? "" : "mt-2"} text-sm text-muted`}>{t("accountGuestLead")}</p>
+        <button type="button" onClick={() => navigate("account")} className="mt-4 h-12 w-full rounded-full bg-espresso text-sm text-white">
+          {t("navAccount")}
+        </button>
+      </div>
+    )
+  }
 
   return (
-    <div className="px-4 pb-6 pt-5">
-      <h1 className="font-serif text-[34px] leading-none text-ink">{t("ordersTitle")}</h1>
-      <p className="mt-2 text-sm text-muted">{orderHistory.length ? t("ordersLead") : t("ordersEmpty")}</p>
+    <div className={shell}>
+      {!embedded && <h1 className="font-serif text-[34px] leading-none text-ink">{t("ordersTitle")}</h1>}
+      <p className={`${embedded ? "" : "mt-2"} text-sm text-muted`}>{orderHistory.length ? t("ordersLead") : t("ordersEmpty")}</p>
       <ul className="mt-5 space-y-3">
         {orderHistory.map((order) => {
           const live = db.orders.find((item) => item.id === order.id)

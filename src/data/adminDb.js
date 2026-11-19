@@ -2,7 +2,7 @@ import { useEffect, useMemo, useSyncExternalStore } from "react"
 import { ICON_NAMES } from "../icons"
 import { normalizeGovernorates } from "../checkout"
 import { MEDIA_PUBLIC_PREFIX, requireSupabase, supabaseConfigError } from "../lib/supabaseClient"
-import { placeOrder as insertStorefrontOrder } from "../services/customerService"
+import { placeOrder as insertStorefrontOrder, upsertMyCustomer } from "../services/customerService"
 import {
   attachSync,
   changeOwnPassword,
@@ -1226,21 +1226,15 @@ export async function recordStorefrontOrder(order) {
     throw new Error(supabaseConfigError || "Supabase is not configured, so the order was not stored on this device.")
   }
   // A stuck catalog load must not keep the order on this phone. Write it as soon as there is a session.
-  await ensureSession()
+  const session = await ensureSession()
+  const user = session?.user
+  if (!user || user.is_anonymous) {
+    throw new Error("Sign in with Google before placing an order.")
+  }
+  await upsertMyCustomer(user, order.customer || {})
+  const linked = { ...order, customerId: user.id, ownerId: user.id }
   const client = requireSupabase()
-  const buyer = order.customer || {}
-  const { error: customerError } = await client.from("customers").upsert(
-    {
-      id: "guest-store",
-      name: buyer.name || "Store guest",
-      email: "guest@glowora.shop",
-      phone: buyer.phone || "",
-      city: buyer.city || "",
-    },
-    { onConflict: "id" },
-  )
-  if (customerError) throw new Error(customerError.message)
-  const saved = await insertStorefrontOrder(order)
+  const saved = await insertStorefrontOrder(linked)
   if (!saved?.id) throw new Error("The database did not return the new order.")
   const { data: persisted, error: readError } = await client.from("orders").select("id").eq("id", saved.id).maybeSingle()
   if (readError) throw new Error(readError.message)

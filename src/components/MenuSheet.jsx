@@ -5,6 +5,7 @@ import { useShop } from "../context/ShopContext"
 import { Logo } from "./ui"
 
 const links = [
+  { id: "account", label: "navAccount" },
   { id: "home", label: "navHome" },
   { id: "brands", label: "navBrands" },
   { id: "categories", label: "navCategories" },
@@ -21,7 +22,7 @@ function iconFor(item) {
 }
 
 export default function MenuSheet() {
-  const { setMenuOpen, navigate } = useShop()
+  const { setMenuOpen, navigate, authUser } = useShop()
   const { socials } = useStorefront()
   const t = useLang()
 
@@ -42,6 +43,19 @@ export default function MenuSheet() {
         <div className="flex justify-center pt-1">
           <Logo />
         </div>
+        {authUser && (
+          <button type="button" onClick={() => navigate("account")} className="mt-4 flex items-center gap-3 rounded-[20px] bg-cream px-3 py-2 text-start">
+            {authUser.avatar ? (
+              <img src={authUser.avatar} alt="" className="h-10 w-10 rounded-full object-cover" />
+            ) : (
+              <span className="grid h-10 w-10 place-items-center rounded-full bg-sand font-serif text-espresso">{(authUser.name || "?").slice(0, 1)}</span>
+            )}
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold text-ink">{authUser.name}</span>
+              <span className="block truncate text-xs text-muted">{t("navAccount")}</span>
+            </span>
+          </button>
+        )}
         <div className="mt-4 flex items-center justify-center gap-3">
           {socials.map((social) => {
             const Icon = iconFor(social)

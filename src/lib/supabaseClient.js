@@ -46,7 +46,7 @@ if (supabaseConfigError) console.error(`[glowora] ${supabaseConfigError}`)
 
 export const supabase = env.configured
   ? createClient(env.url, env.anonKey, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
       realtime: { params: { eventsPerSecond: 20 } },
     })
   : null

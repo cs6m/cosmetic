@@ -14,6 +14,7 @@ import CollectionScreen from "./components/CollectionScreen"
 import FilterSheet from "./components/FilterSheet"
 import Header from "./components/Header"
 import HomeScreen from "./components/HomeScreen"
+import AccountScreen from "./components/AccountScreen"
 import { BrandsScreen, HelpScreen, OrdersScreen } from "./components/MenuPages"
 import MenuSheet from "./components/MenuSheet"
 import ProductDetail from "./components/ProductDetail"
@@ -59,6 +60,7 @@ function Shell() {
             {shop.view === "wishlist" && <WishlistScreen />}
             {shop.view === "brands" && <BrandsScreen />}
             {shop.view === "orders" && <OrdersScreen />}
+            {shop.view === "account" && <AccountScreen />}
             {shop.view === "checkout" && <CheckoutScreen />}
             {shop.view === "help" && <HelpScreen />}
           </div>

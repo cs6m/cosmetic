@@ -5,7 +5,7 @@ import { useLang } from "../i18n"
 import { useShop } from "../context/ShopContext"
 
 export default function CartSheet() {
-  const { cartItems, subtotal, setQty, setCartOpen, bundleDeal, navigate, language } = useShop()
+  const { cartItems, subtotal, setQty, setCartOpen, bundleDeal, navigate, requestCheckout, language } = useShop()
   const { cms } = useStorefront()
   const t = useLang()
 
@@ -65,7 +65,7 @@ export default function CartSheet() {
                 <span className="text-muted">{t("subtotal")}</span>
                 <span className="font-semibold text-ink">{formatPrice(subtotal, language)}</span>
               </div>
-              <button type="button" onClick={() => navigate("checkout")} className="h-12 w-full rounded-full bg-espresso text-sm text-white">
+              <button type="button" onClick={requestCheckout} className="h-12 w-full rounded-full bg-espresso text-sm text-white">
                 {t("checkout")}
               </button>
             </div>

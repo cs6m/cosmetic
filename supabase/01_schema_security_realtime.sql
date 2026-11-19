@@ -3,8 +3,10 @@
 -- Run this whole file once in: Supabase Dashboard → SQL Editor → New query.
 -- Then run 02_seed_data.sql.
 --
--- BEFORE YOU RUN: Authentication → Providers → enable "Anonymous sign-ins".
--- (Guests get an anonymous session so they can place and view *their own* orders.)
+-- BEFORE YOU RUN:
+--   Authentication → Providers → enable Google, and add this site's origin as a redirect URL
+--   (http://localhost:5173 while developing).
+--   Anonymous sign-ins stay enabled so guests can browse. Checkout itself requires Google.
 -- =====================================================================
 
 create extension if not exists pgcrypto;
@@ -134,6 +136,12 @@ create unique index if not exists customers_email_key on public.customers (lower
 -- Ties a checkout profile to the anonymous (or signed-in) shopper. Admins are not limited by it.
 alter table public.customers add column if not exists owner_id uuid default auth.uid() references auth.users (id) on delete set null;
 create index if not exists customers_owner_idx on public.customers (owner_id);
+-- One delivery profile per signed-in shopper. Null owner_id (the shared guest row) is allowed many times.
+create unique index if not exists customers_owner_key on public.customers (owner_id) where owner_id is not null;
+alter table public.customers add column if not exists neighborhood text not null default '';
+alter table public.customers add column if not exists street text not null default '';
+alter table public.customers add column if not exists building text not null default '';
+alter table public.customers add column if not exists address_details text not null default '';
 
 create sequence if not exists public.order_number_seq start with 5000;
 
@@ -632,12 +640,28 @@ create policy "customers checkout insert" on public.customers for insert to anon
   with check (
     public.is_admin()
     or public.has_permission('customers')
-    or owner_id is null
-    or owner_id = auth.uid()
+    or (
+      owner_id = auth.uid()
+      and coalesce(auth.jwt() ->> 'is_anonymous', 'false') <> 'true'
+    )
   );
 create policy "customers checkout update" on public.customers for update to anon, authenticated
-  using (public.is_admin() or public.has_permission('customers') or owner_id = auth.uid())
-  with check (public.is_admin() or public.has_permission('customers') or owner_id = auth.uid());
+  using (
+    public.is_admin()
+    or public.has_permission('customers')
+    or (
+      owner_id = auth.uid()
+      and coalesce(auth.jwt() ->> 'is_anonymous', 'false') <> 'true'
+    )
+  )
+  with check (
+    public.is_admin()
+    or public.has_permission('customers')
+    or (
+      owner_id = auth.uid()
+      and coalesce(auth.jwt() ->> 'is_anonymous', 'false') <> 'true'
+    )
+  );
 create policy "customers admin delete" on public.customers for delete to authenticated
   using (public.is_admin() or public.has_permission('customers'));
 
@@ -661,7 +685,8 @@ create policy "orders checkout insert" on public.orders for insert to anon, auth
     or (
       status = 'pending'
       and source = 'storefront'
-      and (owner_id is null or owner_id = auth.uid())
+      and owner_id = auth.uid()
+      and coalesce(auth.jwt() ->> 'is_anonymous', 'false') <> 'true'
     )
   );
 create policy "orders admin update" on public.orders for update to authenticated

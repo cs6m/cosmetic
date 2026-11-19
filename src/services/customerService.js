@@ -78,6 +78,55 @@ export async function getCms() {
   return Object.fromEntries(unwrap(await supabase.from("cms_entries").select("*")).map((row) => [row.key, row.value]))
 }
 
+// ---- customer profile (own row only; RLS enforces owner_id = auth.uid()) ------
+export function mapCustomer(row) {
+  if (!row) return null
+  return {
+    id: row.id,
+    name: row.name || "",
+    email: row.email || "",
+    phone: row.phone || "",
+    city: row.city || "",
+    neighborhood: row.neighborhood || "",
+    street: row.street || "",
+    building: row.building || "",
+    details: row.address_details || "",
+    ownerId: row.owner_id || null,
+  }
+}
+
+export async function getMyCustomer(userId) {
+  const row = unwrap(await supabase.from("customers").select("*").eq("owner_id", userId).maybeSingle())
+  return mapCustomer(row)
+}
+
+// Writes the signed-in shopper's delivery profile. owner_id must be their auth id or RLS rejects it.
+export async function upsertMyCustomer(user, form = {}) {
+  const meta = user.user_metadata || {}
+  const email = String(user.email || form.email || "").trim()
+  if (!email) throw new Error("This Google account has no email address.")
+  const row = {
+    id: user.id,
+    owner_id: user.id,
+    name: String(form.name || meta.full_name || meta.name || email).trim().slice(0, 80),
+    email,
+    phone: String(form.phone || "").slice(0, 11),
+    city: form.city || "",
+    neighborhood: String(form.neighborhood || "").trim().slice(0, 60),
+    street: String(form.street || "").trim().slice(0, 80),
+    building: String(form.building || "").trim().slice(0, 40),
+    address_details: String(form.details || "").trim().slice(0, 200),
+  }
+  const { data, error } = await supabase.from("customers").upsert(row, { onConflict: "id" }).select("*").single()
+  if (error) {
+    if (/address_details|neighborhood|customers_owner_key/i.test(error.message || "")) {
+      throw new Error("Run supabase/03_customer_profile.sql in the Supabase SQL editor, then try again.")
+    }
+    throw error
+  }
+  return mapCustomer(data)
+}
+
 // ---- orders (own records only; RLS enforces it) ------------------------------
 export async function placeOrder(order) {
   const spec = entry("orders")
