@@ -62,15 +62,24 @@ function reportError(error, context) {
 
 /* ------------------------------------------------------------------ identity */
 
-async function refreshIdentity() {
-  const { data } = await supabase.auth.getSession()
-  const session = data?.session
+let identitySeq = 0
+
+async function refreshIdentity(knownSession) {
+  const seq = ++identitySeq
+  let session = knownSession
+  if (knownSession === undefined) {
+    const { data } = await supabase.auth.getSession()
+    session = data?.session || null
+  }
+  if (seq !== identitySeq) return
   const nextUserId = session?.user?.id || null
   let nextRole = null
-  if (session && !session.user.is_anonymous) {
+  if (session?.user && !session.user.is_anonymous) {
     const { data: profile } = await supabase.from("profiles").select("role, active").eq("id", nextUserId).maybeSingle()
+    if (seq !== identitySeq) return
     if (profile?.active && (profile.role === "admin" || profile.role === "staff")) nextRole = profile.role
   }
+  if (seq !== identitySeq) return
   // Assign only after the profile read. Clearing role first made a hydrate in that gap
   // load orders as a guest, so a phone order never appeared on the admin laptop.
   userId = nextUserId
@@ -96,9 +105,9 @@ async function bindRealtimeAuth() {
 }
 
 export async function signInStaff(email, password) {
-  const { error } = await supabase.auth.signInWithPassword({ email, password })
-  if (error) return { ok: false, reason: "invalid" }
-  await refreshIdentity()
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+  if (error || !data.session) return { ok: false, reason: "invalid" }
+  await refreshIdentity(data.session)
   if (!role) {
     await signOutStaff()
     return { ok: false, reason: "invalid" }
@@ -510,7 +519,7 @@ export function attachSync(api) {
       supabase.auth.onAuthStateChange((event, session) => {
         if (session?.access_token) supabase.realtime.setAuth(session.access_token)
         if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "TOKEN_REFRESHED") {
-          refreshIdentity().then(() => hydrate()).then(() => restartRealtime())
+          refreshIdentity(session).then(() => hydrate()).then(() => restartRealtime())
         }
       })
       window.addEventListener("visibilitychange", () => {

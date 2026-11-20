@@ -108,7 +108,6 @@ export function ShopProvider({ children }) {
   const [deliveryProfile, setDeliveryProfile] = useState(null)
   const [authIntent, setAuthIntent] = useState("")
   const sessionUserRef = useRef(null)
-  const droppingDemo = useRef(false)
   const [wishlist, setWishlist] = useState(["vitamin-c-serum"])
   const [cartOpen, setCartOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -267,17 +266,11 @@ export function ShopProvider({ children }) {
   const applySession = useCallback((session) => {
     const raw = session?.user
     if (raw && !raw.is_anonymous && !isGoogleShopper(raw)) {
+      // A team sign-in shares this browser session. Leave it in place; this screen
+      // only treats a Google shopper as the customer.
       sessionUserRef.current = null
       setAuthUser(null)
       setAuthReady(true)
-      if (!droppingDemo.current) {
-        droppingDemo.current = true
-        signOutStaff()
-          .catch((error) => console.error(error))
-          .finally(() => {
-            droppingDemo.current = false
-          })
-      }
       return
     }
     const shopper = isGoogleShopper(raw) ? raw : null
