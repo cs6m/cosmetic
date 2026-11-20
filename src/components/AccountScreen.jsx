@@ -4,8 +4,6 @@ import { checkoutErrors, normalizePhone } from "../checkout"
 import { customerMessage } from "../customerError"
 import { useShop } from "../context/ShopContext"
 import { useLang } from "../i18n"
-import { OrdersScreen } from "./MenuPages"
-
 const EMPTY = { phone: "", city: "", neighborhood: "", street: "", building: "", details: "" }
 
 export function GoogleContinue({ intent = "account", label }) {
@@ -71,7 +69,7 @@ export function GuestAccount({ checkout = false }) {
 }
 
 export default function AccountScreen() {
-  const { authUser, authReady, authIntent, deliveryProfile, governorates, language, saveDelivery, signOutCustomer } = useShop()
+  const { authUser, authReady, authIntent, deliveryProfile, governorates, language, saveDelivery, signOutCustomer, navigate } = useShop()
   const t = useLang()
   const [form, setForm] = useState(EMPTY)
   const [errors, setErrors] = useState({})
@@ -192,12 +190,9 @@ export default function AccountScreen() {
         </button>
       </form>
 
-      <section className="mt-6">
-        <h2 className="font-serif text-[28px] leading-none text-ink">{t("myOrders")}</h2>
-        <div className="mt-3">
-          <OrdersScreen embedded />
-        </div>
-      </section>
+      <button type="button" onClick={() => navigate("orders")} className="mt-4 h-12 w-full rounded-full bg-sand text-sm text-espresso">
+        {t("ordersTitle")}
+      </button>
 
       <button
         type="button"

@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react"
 import { ImagePlus, Trash2, Upload } from "lucide-react"
 import { useAdmin } from "./context"
 
-export function Panel({ className = "", children }) {
-  return <section className={`rounded-3xl border border-[#3a2d26] bg-[#1b1613] ${className}`}>{children}</section>
+export function Panel({ className = "", children, ...props }) {
+  return <section {...props} className={`rounded-3xl border border-[#3a2d26] bg-[#1b1613] ${className}`}>{children}</section>
 }
 
 export function PageHead({ title, text, action }) {

@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Check, Heart, ShoppingBag } from "lucide-react"
 import { useShop } from "../context/ShopContext"
-import { PriceTag, ProductBadges, Stars } from "./ui"
+import { PriceTag, ProductBadges } from "./ui"
 
 export default function ProductCard({ product }) {
   const { openProduct, addToCart, toggleWish, wishlist } = useShop()
@@ -41,9 +41,6 @@ export default function ProductCard({ product }) {
         <button type="button" onClick={() => openProduct(product.id)} className="block w-full text-left">
           <h3 className="truncate font-medium text-[14px] text-ink">{product.name}</h3>
           <p className="mt-0.5 truncate text-[12px] text-muted">{product.subtitle}</p>
-          <div className="mt-2">
-            <Stars value={product.rating} count={product.reviews} />
-          </div>
         </button>
         <div className="mt-2 flex items-center justify-between gap-2">
           <PriceTag product={product} />

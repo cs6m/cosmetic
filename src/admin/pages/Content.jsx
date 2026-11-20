@@ -1,15 +1,91 @@
 import { useState } from "react"
-import { deleteFaq, deleteSocial, saveBanners, saveFaq, saveHomepage, saveSocial } from "../../data/adminDb"
+import { deleteFaq, deleteSocial, labelCategory, saveBanners, saveFaq, saveHomepage, saveSocial, textOf } from "../../data/adminDb"
 import { useAdmin } from "../context"
-import { ConfirmDialog, explain, Field, GhostButton, Modal, PageHead, Panel, PrimaryButton, readImage, TextArea, TextInput } from "../ui"
+import { ConfirmDialog, explain, Field, GhostButton, ImageField, Modal, PageHead, Panel, PrimaryButton, Select, TextArea, TextInput } from "../ui"
+
+const SECTION_TARGETS = [
+  ["shop-categories", "categories"],
+  ["black-friday", "blackFridaySection"],
+  ["new-products", "newSection"],
+  ["weekly-offers", "weeklySection"],
+]
 
 const SECTIONS = [
   ["black-friday", "blackFridaySection"],
   ["new-products", "newSection"],
   ["weekly-offers", "weeklySection"],
 ]
+
+function linkKind(link) {
+  const value = String(link || "")
+  if (value.startsWith("category:")) return "category"
+  if (value.startsWith("product:")) return "product"
+  if (/^https:\/\//.test(value)) return "custom"
+  return "section"
+}
+
+function BannerDestination({ banner, setBanner, db, t, language }) {
+  const kind = linkKind(banner.link)
+  const sectionId = String(banner.link || "").replace(/^section:/, "")
+  const setKind = (next) => {
+    if (next === "section") setBanner({ ...banner, link: `section:${SECTION_TARGETS.some((item) => item[0] === sectionId) ? sectionId : "shop-categories"}` })
+    if (next === "category") setBanner({ ...banner, link: `category:${db.categories[0]?.id || ""}` })
+    if (next === "product") setBanner({ ...banner, link: `product:${db.products[0]?.id || ""}` })
+    if (next === "custom") setBanner({ ...banner, link: /^https:\/\//.test(banner.link || "") ? banner.link : "https://" })
+  }
+  return (
+    <div className="grid gap-3 sm:col-span-2 sm:grid-cols-2">
+      <Field label={t("bannerLink")}>
+        <Select value={kind} onChange={(event) => setKind(event.target.value)}>
+          <option value="section">{t("destSection")}</option>
+          <option value="category">{t("destCategory")}</option>
+          <option value="product">{t("destProduct")}</option>
+          <option value="custom">{t("destCustom")}</option>
+        </Select>
+      </Field>
+      {kind === "section" && (
+        <Field label={t("destSection")}>
+          <Select value={SECTION_TARGETS.some((item) => item[0] === sectionId) ? sectionId : "shop-categories"} onChange={(event) => setBanner({ ...banner, link: `section:${event.target.value}` })}>
+            {SECTION_TARGETS.map(([id, label]) => (
+              <option key={id} value={id}>
+                {textOf(db.settings.offers?.[id], language, "title") || t(label)}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      )}
+      {kind === "category" && (
+        <Field label={t("destCategory")}>
+          <Select value={String(banner.link || "").slice(9)} onChange={(event) => setBanner({ ...banner, link: `category:${event.target.value}` })}>
+            {db.categories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {labelCategory(category, language)}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      )}
+      {kind === "product" && (
+        <Field label={t("destProduct")}>
+          <Select value={String(banner.link || "").slice(8)} onChange={(event) => setBanner({ ...banner, link: `product:${event.target.value}` })}>
+            {db.products.map((product) => (
+              <option key={product.id} value={product.id}>
+                {textOf(product, language, "name")}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      )}
+      {kind === "custom" && (
+        <Field label={t("destCustom")}>
+          <TextInput value={banner.link || ""} onChange={(event) => setBanner({ ...banner, link: event.target.value })} />
+        </Field>
+      )}
+    </div>
+  )
+}
 export default function Content() {
-  const { db, t, notify } = useAdmin()
+  const { db, t, notify, language } = useAdmin()
   const [home, setHome] = useState(db.settings)
   const [banner, setBanner] = useState(null)
   const [link, setLink] = useState(null)
@@ -17,15 +93,6 @@ export default function Content() {
   const [editing, setEditing] = useState(null)
   const [error, setError] = useState("")
   const [remove, setRemove] = useState(null)
-
-  const onImage = async (file, apply) => {
-    try {
-      apply(await readImage(file))
-      setError("")
-    } catch (reason) {
-      setError(reason.message === "size" ? t("imageLarge") : t("imageType"))
-    }
-  }
 
   const saveHome = () => {
     const result = saveHomepage(home)
@@ -88,7 +155,7 @@ export default function Content() {
             onClick={() => {
               setEditing(null)
               setError("")
-              setBanner({ title: "", titleAr: "", text: "", textAr: "", button: "", buttonAr: "", link: "shop-categories", image: "" })
+              setBanner({ title: "", titleAr: "", text: "", textAr: "", button: "", buttonAr: "", link: "section:shop-categories", image: "" })
             }}
           >
             {t("addBanner")}
@@ -96,7 +163,7 @@ export default function Content() {
         </div>
         {db.banners.map((item) => (
           <div key={item.id} className="flex flex-wrap items-center gap-3 rounded-2xl bg-[#120f0d] p-3">
-            <img src={item.image} alt="" className="h-16 w-28 rounded-xl object-cover" />
+            {item.image ? <img src={item.image} alt="" className="h-16 w-28 rounded-xl object-cover" /> : <span className="h-16 w-28 rounded-xl bg-[#1b1613]" />}
             <div className="min-w-0 flex-1">
               <p className="font-medium">{item.title}</p>
               <p className="truncate text-xs text-[#b5a194]">{item.titleAr}</p>
@@ -119,7 +186,7 @@ export default function Content() {
 
       {SECTIONS.map(([id, label]) => (
         <Panel key={id} className="grid gap-3 p-4 sm:grid-cols-2">
-          <h2 className="font-serif text-xl sm:col-span-2">{t(label)}</h2>
+          <h2 className="font-serif text-xl sm:col-span-2">{textOf(home.offers?.[id], language, "title") || t(label)}</h2>
           <Field label={`${t("kicker")} · ${t("english")}`}>
             <TextInput value={home.offers?.[id]?.kicker || ""} onChange={(event) => setHome({ ...home, offers: { ...home.offers, [id]: { ...home.offers?.[id], kicker: event.target.value } } })} />
           </Field>
@@ -138,19 +205,13 @@ export default function Content() {
           <Field label={`${t("blurb")} · ${t("arabic")}`}>
             <TextInput value={home.offers?.[id]?.textAr || ""} onChange={(event) => setHome({ ...home, offers: { ...home.offers, [id]: { ...home.offers?.[id], textAr: event.target.value } } })} />
           </Field>
-          <Field label={t("bannerImage")}>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(event) =>
-                onImage(event.target.files?.[0], (image) =>
-                  setHome((current) => ({ ...current, offers: { ...current.offers, [id]: { ...current.offers?.[id], image } } })),
-                )
-              }
-              className="text-xs text-[#b5a194]"
+          <div className="sm:col-span-2">
+            <ImageField
+              label={t("bannerImage")}
+              value={home.offers?.[id]?.image || ""}
+              onChange={(image) => setHome((current) => ({ ...current, offers: { ...current.offers, [id]: { ...current.offers?.[id], image } } }))}
             />
-          </Field>
-          {home.offers?.[id]?.image && <img src={home.offers[id].image} alt="" className="h-24 w-full rounded-2xl object-cover sm:col-span-2" />}
+          </div>
         </Panel>
       ))}
       <div className="flex justify-end">
@@ -247,13 +308,10 @@ export default function Content() {
             <Field label={`${t("heroButton")} · ${t("arabic")}`}>
               <TextInput value={banner.buttonAr} onChange={(event) => setBanner({ ...banner, buttonAr: event.target.value })} />
             </Field>
-            <Field label={t("bannerLink")}>
-              <TextInput value={banner.link} onChange={(event) => setBanner({ ...banner, link: event.target.value })} />
-            </Field>
-            <Field label={t("bannerImage")}>
-              <input type="file" accept="image/*" onChange={(event) => onImage(event.target.files?.[0], (image) => setBanner((current) => ({ ...current, image })))} className="text-xs text-[#b5a194]" />
-            </Field>
-            {banner.image && <img src={banner.image} alt="" className="h-28 w-full rounded-2xl object-cover sm:col-span-2" />}
+            <BannerDestination banner={banner} setBanner={setBanner} db={db} t={t} language={language} />
+            <div className="sm:col-span-2">
+              <ImageField label={t("bannerImage")} value={banner.image || ""} onChange={(image) => setBanner((current) => ({ ...current, image }))} />
+            </div>
             {error && <p className="text-sm text-[#f0c2b8] sm:col-span-2">{error}</p>}
             <div className="flex justify-end gap-2 sm:col-span-2">
               <GhostButton onClick={() => setBanner(null)}>{t("cancel")}</GhostButton>

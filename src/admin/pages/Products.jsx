@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { Plus } from "lucide-react"
+import { Plus, Upload } from "lucide-react"
 import { brandLabel, deleteProduct, money, saveBadge, saveProduct, textOf } from "../../data/adminDb"
 import { ICONS, ICON_NAMES } from "../../icons"
 import { useAdmin } from "../context"
@@ -217,7 +217,11 @@ export default function Products() {
         {rows.length === 0 && <Panel className="px-4 py-12 text-center text-sm text-[#b5a194]">{t("noResults")}</Panel>}
         {rows.map((product) => (
           <Panel key={product.id} className="flex flex-wrap items-center gap-3 p-3">
-            <img src={product.images[0]} alt="" className="h-16 w-16 shrink-0 rounded-2xl object-cover" />
+            {product.images?.[0] ? (
+              <img src={product.images[0]} alt="" className="h-16 w-16 shrink-0 rounded-2xl object-cover" />
+            ) : (
+              <span className="h-16 w-16 shrink-0 rounded-2xl bg-[#120f0d]" />
+            )}
             <div className="min-w-0 flex-1 basis-[12rem]">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="font-medium">{product.name}</p>
@@ -312,7 +316,15 @@ export default function Products() {
               <TextInput type="number" min="0" step="1" value={draft.stock} onChange={(event) => setDraft({ ...draft, stock: event.target.value })} />
             </Field>
             <Field label={t("productImages")}>
-              <input type="file" accept="image/*" onChange={(event) => onImage(event.target.files?.[0])} className="block w-full text-xs text-[#b5a194]" />
+              <button
+                type="button"
+                onClick={() => document.getElementById("product-image-file")?.click()}
+                className="inline-flex items-center gap-2 rounded-full bg-[#c6a15b] px-3.5 py-2 text-xs font-medium text-[#2a1c16] transition hover:bg-[#d8b56d]"
+              >
+                <Upload size={14} />
+                {t("uploadImage")}
+              </button>
+              <input id="product-image-file" type="file" accept="image/*" className="sr-only" onChange={(event) => onImage(event.target.files?.[0])} />
             </Field>
             <div className="sm:col-span-2">
               <Field label={`${t("description")} · ${t("english")}`}>
@@ -326,12 +338,18 @@ export default function Products() {
             </div>
           </div>
           {draft.images?.length > 0 && (
-            <div className="mt-3 flex gap-2">
+            <div className="mt-3 flex flex-wrap gap-3">
               {draft.images.map((image, index) => (
-                <button key={image.slice(0, 48) + index} type="button" className="relative" onClick={() => setDraft({ ...draft, images: draft.images.filter((_, item) => item !== index) })}>
+                <div key={image.slice(0, 48) + index} className="space-y-2">
                   <img src={image} alt="" className="h-20 w-20 rounded-2xl object-cover" />
-                  <span className="absolute inset-x-1 bottom-1 rounded-full bg-black/60 text-center text-[10px]">{t("removeImage")}</span>
-                </button>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-full border border-[#3a2d26] px-2.5 py-1 text-[11px] text-[#f0c2b8]"
+                    onClick={() => setDraft({ ...draft, images: draft.images.filter((_, item) => item !== index) })}
+                  >
+                    {t("removeImage")}
+                  </button>
+                </div>
               ))}
             </div>
           )}
@@ -357,7 +375,7 @@ export default function Products() {
               {SECTIONS.map(([id, label]) => (
                 <label key={id} className="flex items-center gap-2 rounded-full bg-[#1b1613] px-3 py-1.5 text-sm">
                   <input type="checkbox" checked={draft.sections.includes(id)} onChange={() => toggle("sections", id)} />
-                  {t(label)}
+                  {textOf(db.settings.offers?.[id], language, "title") || t(label)}
                 </label>
               ))}
             </div>

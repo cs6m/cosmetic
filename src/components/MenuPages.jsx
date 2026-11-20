@@ -1,6 +1,6 @@
 import { useState } from "react"
-import { canReview, cmsText, submitReview, textOf, useDb, useStorefront } from "../data/adminDb"
-import { syncEnabled } from "../data/supabaseSync"
+import { cmsText, submitOrderNote, textOf, useDb, useStorefront } from "../data/adminDb"
+import { getUserId, syncEnabled } from "../data/supabaseSync"
 import { formatPrice } from "../data/catalog"
 import { useShop } from "../context/ShopContext"
 import { useLang } from "../i18n"
@@ -90,6 +90,11 @@ export function OrdersScreen({ embedded = false }) {
           const live = db.orders.find((item) => item.id === order.id)
           const status = live?.status || (order.status === "completed" ? "delivered" : order.status === "delivery" ? "out" : order.status)
           const delivered = status === "delivered"
+          const source = live || order
+          const itemsTotal = (source.items || []).reduce((sum, item) => sum + Number(item.price) * Number(item.qty || 1), 0)
+          const productsTotal = source.subtotal != null ? Number(source.subtotal) : itemsTotal
+          const deliveryFee = source.shipping != null ? Number(source.shipping) : Math.max(0, Number(source.total) - productsTotal)
+          const note = (db.orderNotes || []).find((item) => item.orderId === order.id)
           return (
             <li key={order.id} className="rounded-[24px] bg-ivory p-4 shadow-sm">
               <div className="flex items-start justify-between gap-3">
@@ -106,8 +111,6 @@ export function OrdersScreen({ embedded = false }) {
               <ul className="mt-4 space-y-3">
                 {order.items.map((item) => {
                   const name = language === "ar" ? item.nameAr || item.name : item.name
-                  const sent = (db.reviews || []).some((review) => review.orderId === order.id && review.productId === item.id)
-                  const open = canReview(order.id, item.id)
                   return (
                     <li key={`${order.id}-${item.id}`} className="rounded-2xl bg-cream/70 p-2">
                       <div className="flex items-center gap-3">
@@ -120,17 +123,18 @@ export function OrdersScreen({ embedded = false }) {
                         </div>
                         <p className="text-sm text-cocoa">{formatPrice(item.price * item.qty, language)}</p>
                       </div>
-                      {open && sent && <p className="mt-2 px-1 text-xs text-cocoa">{t("reviewThanks")}</p>}
-                      {open && !sent && <OrderReview orderId={order.id} productId={item.id} author={order.customer?.name || live?.customer?.name || ""} />}
                     </li>
                   )
                 })}
               </ul>
-              {!delivered && <p className="mt-3 text-xs leading-relaxed text-muted">{t("reviewAfterDelivery")}</p>}
-              <div className="mt-4 flex items-center justify-between border-t border-line pt-3">
-                <span className="text-sm text-muted">{t("orderTotal")}</span>
-                <span className="font-serif text-xl text-espresso">{formatPrice(order.total, language)}</span>
-              </div>
+              <dl className="mt-4 space-y-1.5 border-t border-line pt-3 text-sm">
+                <div className="flex items-center justify-between"><dt className="text-muted">{t("subtotal")}</dt><dd>{formatPrice(productsTotal, language)}</dd></div>
+                <div className="flex items-center justify-between"><dt className="text-muted">{t("shipping")}</dt><dd>{formatPrice(deliveryFee, language)}</dd></div>
+                <div className="flex items-center justify-between pt-1"><dt className="font-medium text-ink">{t("grandTotal")}</dt><dd className="font-serif text-xl text-espresso">{formatPrice(source.total, language)}</dd></div>
+              </dl>
+              {delivered && note && <p className="mt-3 rounded-2xl bg-cream px-3 py-2 text-sm text-cocoa">{note.note}</p>}
+              {delivered && !note && <OrderNote orderId={order.id} author={order.customer?.name || live?.customer?.name || authUser?.name || ""} ownerId={authUser?.id || getUserId()} />}
+              {!delivered && <p className="mt-3 text-xs leading-relaxed text-muted">{t("noteAfterDelivery")}</p>}
             </li>
           )
         })}
@@ -139,56 +143,36 @@ export function OrdersScreen({ embedded = false }) {
   )
 }
 
-function OrderReview({ orderId, productId, author }) {
+function OrderNote({ orderId, author, ownerId }) {
   const t = useLang()
-  const [draft, setDraft] = useState({ author, rating: 5, text: "" })
+  const [text, setText] = useState("")
   const [note, setNote] = useState("")
 
   return (
     <form
-      className="mt-2 grid gap-2"
+      className="mt-3 grid gap-2"
       onSubmit={(event) => {
         event.preventDefault()
-        const result = submitReview({ ...draft, orderId, productId })
+        const result = submitOrderNote({ orderId, author, ownerId, note: text })
         if (!result.ok) {
-          setNote(t(result.reason === "exists" ? "reviewExists" : result.reason === "not-delivered" ? "reviewAfterDelivery" : "reviewNeed"))
+          setNote(t(result.reason === "exists" ? "noteExists" : result.reason === "not-delivered" ? "noteAfterDelivery" : "noteNeed"))
           return
         }
-        setNote("")
+        setText("")
+        setNote(t("noteThanks"))
       }}
     >
-      <input
-        value={draft.author}
-        onChange={(event) => setDraft({ ...draft, author: event.target.value })}
-        placeholder={t("yourName")}
-        aria-label={t("yourName")}
-        className="h-10 rounded-full bg-ivory px-4 text-sm text-ink outline-none"
-      />
-      <label className="flex items-center gap-2 text-xs text-muted">
-        {t("stars")}
-        <select
-          value={draft.rating}
-          aria-label={t("stars")}
-          onChange={(event) => setDraft({ ...draft, rating: Number(event.target.value) })}
-          className="h-8 rounded-full bg-ivory px-3 text-ink"
-        >
-          {[5, 4, 3, 2, 1].map((value) => (
-            <option key={value} value={value}>
-              {value}
-            </option>
-          ))}
-        </select>
-      </label>
+      <label className="text-xs text-cocoa">{t("deliveryNote")}</label>
       <textarea
-        value={draft.text}
-        onChange={(event) => setDraft({ ...draft, text: event.target.value })}
-        placeholder={t("yourReview")}
-        aria-label={t("yourReview")}
-        className="min-h-20 rounded-2xl bg-ivory px-4 py-2 text-sm text-ink outline-none"
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        placeholder={t("deliveryNotePlaceholder")}
+        aria-label={t("deliveryNote")}
+        className="min-h-20 rounded-2xl bg-cream px-4 py-2 text-sm text-ink outline-none"
       />
       {note && <p className="text-xs text-cocoa">{note}</p>}
       <button type="submit" className="h-10 rounded-full bg-espresso text-sm text-white">
-        {t("sendReview")}
+        {t("sendNote")}
       </button>
     </form>
   )

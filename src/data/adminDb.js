@@ -649,6 +649,7 @@ export function buildSeed() {
     brands: seedBrandRecords(),
     badges: seedBadges(),
     reviews: seedReviews(),
+    orderNotes: [],
     faqs: seedFaqs(),
     socials: seedSocials(),
     cms: defaultCms(),
@@ -782,6 +783,7 @@ function remoteShell() {
     orders: [],
     customers: [],
     reviews: [],
+    orderNotes: [],
     banners: [],
     brands: [],
     categories: [],
@@ -1329,7 +1331,8 @@ export function saveProduct(input, editingId) {
   if (!category) return { ok: false, reason: "invalid" }
   const groups = db.subcategories[category.id] || []
   const subcategory = groups.some((item) => item.id === input.subcategory) ? input.subcategory : groups[0]?.id || null
-  const images = (Array.isArray(input.images) && input.images.length ? input.images : [input.image])
+  const images = (Array.isArray(input.images) ? input.images : [])
+    .filter(Boolean)
     .map(safeImage)
     .slice(0, 3)
   const badgeIds = (input.badges || []).filter((id) => db.badges.some((item) => item.id === id)).slice(0, 4)
@@ -1401,7 +1404,7 @@ export function saveCategory(input, editingId) {
   if (!name) return { ok: false, reason: "invalid" }
   let id = editingId || slug(name)
   if (!editingId && db.categories.some((item) => item.id === id)) id = `${id}-${Date.now()}`
-  const record = { id, name, nameAr, image: safeImage(input.image) }
+  const record = { id, name, nameAr, image: input.image ? safeImage(input.image) : "" }
   const categories = editingId
     ? db.categories.map((item) => (item.id === editingId ? { ...item, ...record, id: editingId } : item))
     : [...db.categories, record]
@@ -1444,7 +1447,7 @@ export function saveSubcategory(categoryId, input, editingId) {
     label: name,
     name,
     nameAr,
-    image: safeImage(input.image || db.categories.find((item) => item.id === categoryId)?.image),
+    image: input.image ? safeImage(input.image) : "",
   }
   const next = editingId
     ? current.map((item) => (item.id === editingId ? { ...item, ...record, id: editingId } : item))
@@ -1888,6 +1891,24 @@ export function deleteReview(id) {
   return saved
 }
 
+export function submitOrderNote(input) {
+  const db = ensure()
+  const note = cleanText(input.note, 500)
+  const order = db.orders.find((item) => item.id === input.orderId)
+  if (!order || order.status !== "delivered" || order.source !== "storefront") return { ok: false, reason: "not-delivered" }
+  if (note.length < 2) return { ok: false, reason: "invalid" }
+  if ((db.orderNotes || []).some((item) => item.orderId === order.id)) return { ok: false, reason: "exists" }
+  const record = {
+    id: `note-${Date.now()}`,
+    orderId: order.id,
+    ownerId: input.ownerId || order.ownerId || null,
+    author: cleanText(input.author, 80),
+    note,
+    createdAt: new Date().toISOString(),
+  }
+  return commit({ ...db, orderNotes: [record, ...(db.orderNotes || [])] })
+}
+
 export function submitReview(input) {
   const db = ensure()
   const author = cleanText(input.author, 40)
@@ -1955,7 +1976,7 @@ export function saveBanners(list) {
       buttonAr: cleanText(item.buttonAr, 32),
       link: cleanText(item.link, 180),
     }))
-    .filter((item) => item.image && (item.title || item.titleAr))
+    .filter((item) => item.title || item.titleAr)
     .slice(0, 8)
   if (!banners.length) return { ok: false, reason: "invalid" }
   const saved = commit({ ...db, banners })

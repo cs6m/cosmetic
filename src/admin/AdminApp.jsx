@@ -49,6 +49,7 @@ function canOpen(page, can) {
   if (page === "people") return can("customers") || can("team")
   if (page === "brands") return can("brands") || can("products")
   if (page === "content") return can("settings")
+  if (page === "reviews") return can("reviews") || can("orders")
   return can(page)
 }
 

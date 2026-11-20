@@ -717,6 +717,30 @@ create policy "reviews moderate" on public.reviews for update to authenticated
 drop policy if exists "reviews remove" on public.reviews;
 create policy "reviews remove" on public.reviews for delete to authenticated using (public.has_permission('reviews'));
 
+-- One note per delivered order, written by the customer who owns it.
+create table if not exists public.order_notes (
+  id          text primary key,
+  order_id    text not null unique references public.orders(id) on update cascade on delete cascade,
+  owner_id    uuid default auth.uid() references auth.users(id) on delete set null,
+  author      text not null default '',
+  note        text not null check (char_length(note) between 2 and 500),
+  created_at  timestamptz not null default now()
+);
+alter table public.order_notes enable row level security;
+drop policy if exists "order notes read" on public.order_notes;
+create policy "order notes read" on public.order_notes for select to anon, authenticated
+  using (owner_id = auth.uid() or public.has_permission('orders') or public.has_permission('reviews'));
+drop policy if exists "order notes after delivery" on public.order_notes;
+create policy "order notes after delivery" on public.order_notes for insert to anon, authenticated
+  with check (
+    owner_id = auth.uid()
+    and exists (
+      select 1 from public.orders o
+      where o.id = order_id and o.owner_id = auth.uid() and o.status = 'delivered'
+    )
+  );
+grant select, insert on public.order_notes to anon, authenticated;
+
 -- Profiles / team: you can read and edit your own; admins manage everyone.
 drop policy if exists "profiles read" on public.profiles;
 create policy "profiles read" on public.profiles for select to authenticated using (id = auth.uid() or public.is_admin());
@@ -741,7 +765,7 @@ do $$
 declare t text;
 begin
   foreach t in array array['profiles','brands','categories','subcategories','badges','products','customers',
-                           'orders','reviews','faqs','socials','banners','cms_entries','store_settings',
+                           'orders','reviews','order_notes','faqs','socials','banners','cms_entries','store_settings',
                            'governorates','audit_log']
   loop
     if not exists (select 1 from pg_publication_tables

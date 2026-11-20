@@ -1,13 +1,14 @@
 import { useState } from "react"
 import { Plus } from "lucide-react"
 import { customerStats, hashPassword, money, PERMISSIONS, removeMember, saveCustomer, saveMember } from "../../data/adminDb"
+import { governorateLabel } from "../../checkout"
 import { useAdmin } from "../context"
-import { explain, Field, formatWhen, GhostButton, Modal, PageHead, Panel, PrimaryButton, Select, TextInput } from "../ui"
+import { explain, Field, formatWhen, GhostButton, Modal, PageHead, Panel, PrimaryButton, Select, StatusPill, TextInput } from "../ui"
 
 const STAFF_PERMS = PERMISSIONS.filter((item) => item !== "team")
 
 export default function People() {
-  const { db, t, language, notify, can, user } = useAdmin()
+  const { db, t, language, notify, can, user, open } = useAdmin()
   const [tab, setTab] = useState(can("customers") ? "customers" : "team")
   const [customer, setCustomer] = useState(null)
   const [member, setMember] = useState(null)
@@ -84,12 +85,19 @@ export default function People() {
               const stats = customerStats(db, person.id)
               return (
                 <Panel key={person.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
-                  <div className="min-w-0 flex-1">
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 text-start"
+                    onClick={() => {
+                      setError("")
+                      setCustomer(person)
+                    }}
+                  >
                     <p className="font-medium">{person.name}</p>
                     <p className="text-xs text-[#b5a194]">
                       {person.email} · {person.city}
                     </p>
-                  </div>
+                  </button>
                   <div className="text-sm text-[#e7d3c4]">
                     <p>{formatWhen(person.registeredAt, language)}</p>
                     <p className="text-xs text-[#b5a194]">
@@ -182,6 +190,7 @@ export default function People() {
             </Field>
           </div>
           {error && <p className="mt-3 text-sm text-[#f0c2b8]">{error}</p>}
+          {customer.id && <CustomerHistory customerId={customer.id} db={db} t={t} language={language} open={open} />}
           <div className="mt-4 flex justify-end gap-2">
             <GhostButton onClick={() => setCustomer(null)}>{t("cancel")}</GhostButton>
             <PrimaryButton onClick={savePerson}>{t("save")}</PrimaryButton>
@@ -243,6 +252,55 @@ export default function People() {
           </div>
         </Modal>
       )}
+    </div>
+  )
+}
+
+function CustomerHistory({ customerId, db, t, language, open }) {
+  const [opened, setOpened] = useState(null)
+  const orders = db.orders.filter((order) => order.customerId === customerId)
+  const spent = orders.filter((order) => order.status !== "returned").reduce((sum, order) => sum + Number(order.total || 0), 0)
+  const show = (orderId) => {
+    try {
+      sessionStorage.setItem("glowora-focus-order", orderId)
+    } catch {
+      /* orders page still opens */
+    }
+    open("orders")
+  }
+  return (
+    <div className="mt-4 space-y-3">
+      <div className="rounded-2xl bg-[#120f0d] px-3 py-3">
+        <p className="text-xs text-[#b5a194]">{t("lifetimeSpend")}</p>
+        <p className="mt-1 font-serif text-2xl text-[#e4c99a]">{money(spent, language)}</p>
+      </div>
+      {orders.length === 0 && <p className="text-sm text-[#b5a194]">{t("noResults")}</p>}
+      {orders.map((order) => (
+        <div key={order.id} className="rounded-2xl bg-[#120f0d] p-3">
+          <button type="button" className="flex w-full items-center justify-between gap-3 text-start" onClick={() => setOpened(opened === order.id ? null : order.id)}>
+            <span>
+              <span className="block text-sm">{order.id}</span>
+              <span className="text-xs text-[#b5a194]">{governorateLabel(order.customer?.city, language) || order.customer?.city || ""}</span>
+            </span>
+            <span className="text-end">
+              <StatusPill status={order.status} label={t(order.status)} />
+              <span className="mt-1 block text-sm">{money(order.total, language)}</span>
+            </span>
+          </button>
+          {opened === order.id && (
+            <div className="mt-3 space-y-2 border-t border-[#3a2d26] pt-3 text-sm">
+              <p>{order.customer?.name} · {order.customer?.phone}</p>
+              <ul className="space-y-1 text-[#e7d3c4]">
+                {(order.items || []).map((item) => (
+                  <li key={item.id}>{language === "ar" ? item.nameAr || item.name : item.name} × {item.qty}</li>
+                ))}
+              </ul>
+              <p className="text-xs text-[#b5a194]">{t("subtotal")} {money(order.subtotal || 0, language)} · {t("shipping")} {money(order.shipping || 0, language)}</p>
+              <GhostButton onClick={() => show(order.id)}>{t("orders")}</GhostButton>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   )
 }

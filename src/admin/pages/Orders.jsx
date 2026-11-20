@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { governorateLabel } from "../../checkout"
 import { advanceOrder, money, textOf } from "../../data/adminDb"
 import { useAdmin } from "../context"
@@ -18,6 +18,26 @@ export default function Orders() {
   const { db, t, language, notify } = useAdmin()
   const [tab, setTab] = useState("pending")
   const [query, setQuery] = useState("")
+  const [focus, setFocus] = useState("")
+
+  useEffect(() => {
+    let id = ""
+    try {
+      id = sessionStorage.getItem("glowora-focus-order") || ""
+      if (id) sessionStorage.removeItem("glowora-focus-order")
+    } catch {
+      id = ""
+    }
+    if (!id) return
+    setTab("all")
+    setQuery(id)
+    setFocus(id)
+  }, [])
+
+  useEffect(() => {
+    if (!focus) return
+    document.getElementById(`order-${focus}`)?.scrollIntoView({ behavior: "smooth", block: "center" })
+  }, [focus, tab, query])
   const [pendingAction, setPendingAction] = useState(null)
 
   const rows = useMemo(() => {
@@ -71,7 +91,7 @@ export default function Orders() {
             const person = db.customers.find((item) => item.id === order.customerId)
             const actions = ACTION[order.status] || []
             return (
-              <Panel key={order.id} className="p-4">
+              <Panel key={order.id} id={`order-${order.id}`} className="p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">

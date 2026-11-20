@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { ArrowRight, BadgeCheck, Heart, Leaf } from "lucide-react"
 import { cmsText, labelCategory, productsForSection, textOf, useStorefront } from "../data/adminDb"
 import { useShop } from "../context/ShopContext"
@@ -51,23 +51,33 @@ function scrollToSection(id) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })
 }
 
-function openBanner(link) {
+function openBanner(link, { openCategory, openProduct }) {
   if (!link) return
+  if (link.startsWith("category:")) {
+    openCategory(link.slice("category:".length))
+    return
+  }
+  if (link.startsWith("product:")) {
+    openProduct(link.slice("product:".length))
+    return
+  }
   if (/^https:\/\//.test(link)) {
     window.open(link, "_blank", "noopener")
     return
   }
-  document.getElementById(link)?.scrollIntoView({ behavior: "smooth", block: "start" })
+  const id = link.startsWith("section:") ? link.slice("section:".length) : link
+  document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })
 }
 
-function BannerCarousel({ banners, language }) {
+function BannerCarousel({ banners, language, openCategory, openProduct }) {
   const [index, setIndex] = useState(0)
+  const drag = useRef(null)
   const rtl = language === "ar"
   useEffect(() => {
     if (banners.length < 2) return undefined
     const timer = window.setInterval(() => setIndex((current) => (current + 1) % banners.length), 4800)
     return () => window.clearInterval(timer)
-  }, [banners.length, language])
+  }, [banners.length, language, index])
 
   if (!banners.length) return null
   const place = (itemIndex) => {
@@ -76,18 +86,40 @@ function BannerCarousel({ banners, language }) {
     if (itemIndex === previous) return rtl ? "translate-x-full" : "-translate-x-full"
     return rtl ? "-translate-x-full" : "translate-x-full"
   }
+  const step = (direction) => setIndex((current) => (current + direction + banners.length) % banners.length)
 
   return (
-    <section className="relative min-h-[440px] overflow-hidden rounded-3xl">
+    <section
+      className="relative min-h-[440px] touch-pan-y overflow-hidden rounded-3xl"
+      onPointerDown={(event) => {
+        if (event.target.closest("button")) return
+        drag.current = { x: event.clientX, id: event.pointerId }
+      }}
+      onPointerUp={(event) => {
+        if (!drag.current || drag.current.id !== event.pointerId) return
+        const delta = event.clientX - drag.current.x
+        drag.current = null
+        if (Math.abs(delta) < 48 || banners.length < 2) return
+        const forward = rtl ? delta > 0 : delta < 0
+        step(forward ? 1 : -1)
+      }}
+      onPointerCancel={() => {
+        drag.current = null
+      }}
+    >
       {banners.map((banner, itemIndex) => (
         <div key={banner.id} className={`absolute inset-0 transition-transform duration-700 ease-in-out ${place(itemIndex)}`}>
-          <img src={banner.image} alt="" className="absolute inset-0 h-full w-full object-cover object-[center_20%]" />
+          {banner.image ? (
+            <img src={banner.image} alt="" className="absolute inset-0 h-full w-full object-cover object-[center_20%]" />
+          ) : (
+            <div className="absolute inset-0 bg-[#3c2a26]" />
+          )}
           <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/45 to-black/75" />
           <div className="relative z-10 flex min-h-[440px] flex-col px-6 pb-24 pt-8 text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.35)]">
             <h1 className="max-w-[12ch] font-serif text-[46px] font-medium leading-[0.98] tracking-[-0.03em]">{textOf(banner, language, "title")}</h1>
             <p className="mt-4 max-w-[24ch] text-sm leading-relaxed text-white/85">{textOf(banner, language, "text")}</p>
             {textOf(banner, language, "button") && (
-              <button type="button" onClick={() => openBanner(banner.link)} className="mt-auto inline-flex w-fit items-center gap-2 rounded-full bg-[#3c2a26]/85 px-5 py-3 text-sm text-white shadow-lg backdrop-blur-sm transition hover:bg-[#2d201c]">
+              <button type="button" onClick={() => openBanner(banner.link, { openCategory, openProduct })} className="mt-auto inline-flex w-fit items-center gap-2 rounded-full bg-[#3c2a26]/85 px-5 py-3 text-sm text-white shadow-lg backdrop-blur-sm transition hover:bg-[#2d201c]">
                 {textOf(banner, language, "button")} <ArrowRight size={16} className="rtl:rotate-180" />
               </button>
             )}
@@ -106,7 +138,7 @@ function BannerCarousel({ banners, language }) {
 }
 
 export default function HomeScreen() {
-  const { openCategory, openOffer, navigate, language, catalogProducts: products } = useShop()
+  const { openCategory, openOffer, openProduct, navigate, language, catalogProducts: products } = useShop()
   const { categories, settings, cms, banners } = useStorefront()
   const t = useLang()
   const featured = products.filter((product) => (product.badgeItems || []).length > 0).slice(0, 4)
@@ -116,7 +148,7 @@ export default function HomeScreen() {
 
   return (
     <div>
-      <BannerCarousel banners={banners} language={language} />
+      <BannerCarousel banners={banners} language={language} openCategory={openCategory} openProduct={openProduct} />
 
       <section className="relative z-10 mx-4 -mt-8 grid grid-cols-3 overflow-hidden rounded-3xl bg-ivory px-2 py-3 shadow-[0_12px_30px_rgba(74,48,40,0.06)]">
         {trust.map((item) => (

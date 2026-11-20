@@ -9,8 +9,6 @@ const sorts = [
   { id: "newest", label: "sortNewest" },
   { id: "price-asc", label: "sortPriceAsc" },
   { id: "price-desc", label: "sortPriceDesc" },
-  { id: "rating", label: "sortRating" },
-  { id: "reviews", label: "sortReviews" },
   { id: "name-asc", label: "sortNameAsc" },
   { id: "name-desc", label: "sortNameDesc" },
 ]

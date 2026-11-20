@@ -149,6 +149,10 @@ async function fetchAll(entry) {
     const to = entry.limit ? entry.limit - 1 : from + size - 1
     const { data, error } = await query.range(entry.limit ? 0 : from, to)
     if (error) {
+      if (entry.table === "order_notes" && (error.code === "42P01" || /order_notes/i.test(error.message || ""))) {
+        reportError(new Error("Run supabase/05_order_notes.sql in the Supabase SQL editor to enable delivery notes."), "order_notes")
+        return []
+      }
       reportError(error, `read ${entry.table}`)
       return null
     }

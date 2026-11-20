@@ -1,69 +1,47 @@
-import { useState } from "react"
-import { deleteReview, setReviewStatus } from "../../data/adminDb"
+import { money } from "../../data/adminDb"
 import { useAdmin } from "../context"
-import { ConfirmDialog, explain, GhostButton, PageHead, Panel, StatusPill } from "../ui"
+import { formatWhen, GhostButton, PageHead, Panel } from "../ui"
 
 export default function Reviews() {
-  const { db, t, notify } = useAdmin()
-  const [filter, setFilter] = useState("pending")
-  const [removeId, setRemoveId] = useState(null)
-  const rows = db.reviews.filter((item) => (filter === "all" ? true : item.status === filter))
+  const { db, t, language, open } = useAdmin()
+  const notes = [...(db.orderNotes || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
 
-  const act = (id, status) => {
-    const result = setReviewStatus(id, status)
-    notify(result.ok ? t("saved") : explain(t, result))
-  }
-
-  const remove = () => {
-    const result = deleteReview(removeId)
-    setRemoveId(null)
-    notify(result.ok ? t("saved") : explain(t, result))
+  const openOrder = (orderId) => {
+    try {
+      sessionStorage.setItem("glowora-focus-order", orderId)
+    } catch {
+      /* the orders page still opens */
+    }
+    open("orders")
   }
 
   return (
     <div className="space-y-5">
       <PageHead title={t("reviews")} text={t("reviewsLead")} />
-      <div className="flex gap-2">
-        {[
-          ["pending", "pendingReviews"],
-          ["approved", "approvedReviews"],
-          ["all", "all"],
-        ].map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setFilter(id)}
-            className={`rounded-full px-3 py-1.5 text-sm ${filter === id ? "bg-[#c6a15b] text-[#2a1c16]" : "bg-[#1b1613] text-[#e7d3c4]"}`}
-          >
-            {t(label)}
-          </button>
-        ))}
-      </div>
+      {notes.length === 0 && <Panel className="p-4 text-sm text-[#b5a194]">{t("noResults")}</Panel>}
       <div className="grid gap-3">
-        {rows.length === 0 && <Panel className="px-4 py-12 text-center text-sm text-[#b5a194]">{t("noResults")}</Panel>}
-        {rows.map((review) => {
-          const product = db.products.find((item) => item.id === review.productId)
+        {notes.map((item) => {
+          const order = db.orders.find((entry) => entry.id === item.orderId)
           return (
-            <Panel key={review.id} className="space-y-2 p-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="font-medium">{review.author}</p>
-                <StatusPill status={review.status === "approved" ? "delivered" : "pending"} label={review.status === "approved" ? t("approvedReviews") : t("pendingReviews")} />
-                <span className="text-sm text-[#e4c99a]">{"★".repeat(review.rating)}</span>
-              </div>
-              <p className="text-xs text-[#b5a194]">{product?.name || review.productId}</p>
-              <p className="text-sm leading-relaxed text-[#e7d3c4]">{review.text}</p>
-              <div className="flex gap-2">
-                {review.status !== "approved" && <GhostButton onClick={() => act(review.id, "approved")}>{t("approveReview")}</GhostButton>}
-                {review.status === "approved" && <GhostButton onClick={() => act(review.id, "pending")}>{t("hideReview")}</GhostButton>}
-                <GhostButton className="text-[#f0c2b8]" onClick={() => setRemoveId(review.id)}>
-                  {t("remove")}
-                </GhostButton>
+            <Panel key={item.id} className="p-4">
+              <button type="button" onClick={() => openOrder(item.orderId)} className="block w-full text-start">
+                <p className="text-xs text-[#b5a194]">
+                  {item.orderId} · {item.author || order?.customer?.name || ""} · {formatWhen(item.createdAt, language)}
+                </p>
+                <p className="mt-2 text-sm leading-relaxed text-[#f3e6da]">{item.note}</p>
+                {order && (
+                  <p className="mt-2 text-xs text-[#e4c99a]">
+                    {order.customer?.city || ""} · {money(order.total, language)} · {t(order.status)}
+                  </p>
+                )}
+              </button>
+              <div className="mt-3">
+                <GhostButton onClick={() => openOrder(item.orderId)}>{t("orders")}</GhostButton>
               </div>
             </Panel>
           )
         })}
       </div>
-      {removeId && <ConfirmDialog text={t("confirmDelete")} onCancel={() => setRemoveId(null)} onConfirm={remove} />}
     </div>
   )
 }
