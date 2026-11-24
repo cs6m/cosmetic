@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react"
 import { ShopProvider, useShop } from "./context/ShopContext"
+import { trackStorefrontVisit } from "./lib/visitTracker"
 
 const AdminApp = lazy(() => import("./admin/AdminApp"))
 
@@ -79,6 +80,22 @@ export default function App() {
     window.addEventListener("hashchange", sync)
     return () => window.removeEventListener("hashchange", sync)
   }, [])
+
+  useEffect(() => {
+    if (admin) return undefined
+    const page = () => {
+      const hash = window.location.hash || "#/"
+      if (hash.startsWith("#/admin")) return ""
+      return `${window.location.pathname}${hash}`
+    }
+    const run = () => {
+      const path = page()
+      if (path) trackStorefrontVisit(path)
+    }
+    run()
+    window.addEventListener("hashchange", run)
+    return () => window.removeEventListener("hashchange", run)
+  }, [admin])
 
   if (admin) {
     return (

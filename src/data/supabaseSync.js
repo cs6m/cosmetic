@@ -162,6 +162,10 @@ async function fetchAll(entry) {
         reportError(new Error("Run supabase/05_order_notes.sql in the Supabase SQL editor to enable delivery notes."), "order_notes")
         return []
       }
+      if (entry.table === "page_visits" && (error.code === "42P01" || /page_visits/i.test(error.message || ""))) {
+        reportError(new Error("Run supabase/06_featured_visits_returns_bans.sql in the Supabase SQL editor to enable visitor analytics."), "page_visits")
+        return []
+      }
       reportError(error, `read ${entry.table}`)
       return null
     }
@@ -384,9 +388,8 @@ async function insertGuestOrders(rows) {
         break
       }
       if (error.code === "23505") {
-        // Another shopper took this number first — ask the server for the next free one.
-        const { data } = await supabase.rpc("next_order_id")
-        attempt = { ...attempt, id: data }
+        const current = Number(String(attempt.id).replace(/\D/g, "")) || 0
+        attempt = { ...attempt, id: `GL-${String(current + 1).padStart(3, "0")}` }
         continue
       }
       bridge.dropOrder(row.id)
@@ -427,7 +430,7 @@ async function runChanges(changes) {
 
   // 1) inserts / updates, parents before children
   for (const { entry, upserts } of changes) {
-    if (!upserts.length) continue
+    if (!upserts.length || entry.readonly) continue
     if (entry.table === "profiles") continue
     if (!staff) {
       if (entry.guestInsert) {
@@ -450,7 +453,7 @@ async function runChanges(changes) {
   // 2) deletes, children before parents
   if (staff) {
     for (const { entry, removed } of [...changes].reverse()) {
-      if (!removed.length || entry.noDelete || entry.table === "profiles") continue
+      if (!removed.length || entry.noDelete || entry.readonly || entry.table === "profiles") continue
       if (entry.pk.length === 1) {
         const { error } = await supabase.from(entry.table).delete().in(entry.pk[0], removed.map((item) => item.row[entry.pk[0]]))
         if (error) throw Object.assign(error, { message: `${entry.table}: ${error.message}` })

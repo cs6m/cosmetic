@@ -92,6 +92,7 @@ export function mapCustomer(row) {
     building: row.building || "",
     details: row.address_details || "",
     ownerId: row.owner_id || null,
+    isBanned: Boolean(row.is_banned),
   }
 }
 
@@ -136,8 +137,9 @@ export async function placeOrder(order) {
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const { data, error } = await supabase.from("orders").insert(row).select("*").single()
     if (!error) return spec.fromRow(data)
-    if (error.code !== "23505") throw error // validation errors from the server are in error.message
-    row = { ...row, id: unwrap(await supabase.rpc("next_order_id")) }
+    if (error.code !== "23505") throw error
+    const current = Number(String(row.id).replace(/\D/g, "")) || 0
+    row = { ...row, id: `GL-${String(current + 1).padStart(3, "0")}` }
   }
   throw new Error("Could not allocate an order number")
 }

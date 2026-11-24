@@ -91,7 +91,7 @@ export default function CheckoutScreen() {
     const result = await placeOrder(cleanCheckout(form))
     setSending(false)
     if (!result?.ok) {
-      setFormError(customerMessage(language))
+      setFormError(result.reason === "banned" ? t("accountRestricted") : customerMessage(language))
       return
     }
     navigate("orders")
@@ -113,6 +113,11 @@ export default function CheckoutScreen() {
     <form ref={formRef} onSubmit={submit} className="px-4 pb-8 pt-5" noValidate>
       <h1 className="font-serif text-[34px] leading-none text-ink">{t("checkoutTitle")}</h1>
       <p className="mt-2 text-sm text-muted">{t("checkoutLead")}</p>
+      {deliveryProfile?.isBanned && (
+        <p role="alert" className="mt-4 rounded-2xl bg-[#f6e7df] px-4 py-3 text-sm text-[#9a4d45]">
+          {t("accountRestricted")}
+        </p>
+      )}
 
       <section className="mt-5 space-y-3 rounded-[24px] bg-ivory p-4">
         <Field name="name" label={t("fullName")} required error={errors.name && t(errors.name)}>
@@ -210,7 +215,7 @@ export default function CheckoutScreen() {
             {formError}
           </p>
         )}
-        <button type="submit" disabled={sending} className="mt-4 h-12 w-full rounded-full bg-espresso text-sm text-white disabled:opacity-60">
+        <button type="submit" disabled={sending || deliveryProfile?.isBanned} className="mt-4 h-12 w-full rounded-full bg-espresso text-sm text-white disabled:opacity-60">
           {sending ? (language === "ar" ? "جاري الإرسال…" : "Sending…") : t("confirmOrder")}
         </button>
       </section>

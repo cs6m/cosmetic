@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
-import { AlertTriangle, ChevronLeft, ChevronRight, ShoppingBag, Sparkles, TrendingUp, Users, Wallet } from "lucide-react"
-import { dashboardMetrics, dayDetails, money, textOf } from "../../data/adminDb"
+import { AlertTriangle, ChevronLeft, ChevronRight, Eye, ShoppingBag, Sparkles, TrendingUp, Users, Wallet } from "lucide-react"
+import { dashboardMetrics, dayDetails, money, textOf, visitStats } from "../../data/adminDb"
 import { formatFullDay, InteractiveChart } from "../charts"
 import { useAdmin } from "../context"
 import { formatWhen, PageHead, Panel, StatusPill } from "../ui"
@@ -18,6 +18,7 @@ const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateStrin
 export default function Overview() {
   const { db, t, language, range, setRange, customRange, setCustomRange, open } = useAdmin()
   const metrics = dashboardMetrics(db, range, customRange)
+  const visits = visitStats(db)
   const top = metrics.top[0]
   const series = metrics.series
   const hourly = series.granularity === "hour"
@@ -90,6 +91,35 @@ export default function Overview() {
           </div>
         )}
       </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric icon={Eye} label={t("visitsToday")} value={visits.today.toLocaleString("en-US")} />
+        <Metric icon={Eye} label={t("visitsMonth")} value={visits.month.toLocaleString("en-US")} />
+        <Metric icon={Eye} label={t("visitsTotal")} value={visits.total.toLocaleString("en-US")} />
+        <Metric icon={Users} label={t("returningVisitors")} value={visits.returning.length.toLocaleString("en-US")} hint={t("returningLead")} />
+      </div>
+
+      <Panel className="p-4">
+        <h2 className="font-serif text-2xl text-[#f6f1eb]">{t("returningVisitors")}</h2>
+        <p className="mt-1 text-sm text-[#b5a194]">{t("returningLead")}</p>
+        {visits.returning.length === 0 ? (
+          <p className="mt-4 text-sm text-[#b5a194]">{t("noReturning")}</p>
+        ) : (
+          <ul className="mt-4 divide-y divide-[#3a2d26]">
+            {visits.returning.slice(0, 12).map((visit) => (
+              <li key={visit.visitorId} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
+                <span className="font-mono text-xs text-[#e7d3c4]">{visit.visitorId}</span>
+                <span className="text-[#f6f1eb]">
+                  {visit.count} {t("visitCount")}
+                </span>
+                <span className="text-xs text-[#b5a194]">
+                  {t("lastVisit")} · {formatWhen(visit.last, language)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Panel>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <Metric icon={Wallet} label={t("sales")} value={money(metrics.sales, language)} hint={t("salesHint")} />

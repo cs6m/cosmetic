@@ -141,10 +141,10 @@ export default function HomeScreen() {
   const { openCategory, openOffer, openProduct, navigate, language, catalogProducts: products } = useShop()
   const { categories, settings, cms, banners } = useStorefront()
   const t = useLang()
-  const featured = products.filter((product) => (product.badgeItems || []).length > 0).slice(0, 4)
-  const picks = featured.length ? featured : products.slice(0, 4)
+  const picks = productsForSection(products, "featured").slice(0, 8)
   const shelves = offerProducts(products)
   const copyOf = (id) => textOf(settings.offers?.[id], language, "title")
+  const featuredTitle = textOf(settings.offers?.featured, language, "title") || cmsText(cms, language, "featuredTitle") || t("featured")
 
   return (
     <div>
@@ -194,13 +194,17 @@ export default function HomeScreen() {
         <OfferShelf key={offer.id} offer={offer} items={shelves[offer.id]} onViewAll={() => openOffer(offer.id)} />
       ))}
 
-      <section className="overflow-hidden rounded-3xl bg-[#f8f1ea] px-4 py-6">
-        <SectionTitle title={cmsText(cms, language, "featuredTitle")} action={t("viewAll")} onAction={() => navigate("shop")} />
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          {picks.map((product) => (
-            <ProductCard key={product.id} product={product} />
-          ))}
-        </div>
+      <section id="featured" className="scroll-mt-4 overflow-hidden rounded-3xl bg-[#f8f1ea] px-4 py-6">
+        <SectionTitle title={featuredTitle} action={t("viewAll")} onAction={() => openOffer("featured")} />
+        {picks.length === 0 ? (
+          <p className="mt-4 text-sm text-muted">{t("featuredEmpty")}</p>
+        ) : (
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            {picks.map((product) => (
+              <ProductCard key={product.id} product={product} />
+            ))}
+          </div>
+        )}
       </section>
     </div>
   )

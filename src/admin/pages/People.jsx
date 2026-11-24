@@ -1,9 +1,9 @@
 import { useState } from "react"
 import { Plus } from "lucide-react"
-import { customerStats, hashPassword, money, PERMISSIONS, removeMember, saveCustomer, saveMember } from "../../data/adminDb"
+import { customerStats, deleteCustomer, hashPassword, money, PERMISSIONS, removeMember, saveCustomer, saveMember, setCustomerBan } from "../../data/adminDb"
 import { governorateLabel } from "../../checkout"
 import { useAdmin } from "../context"
-import { explain, Field, formatWhen, GhostButton, Modal, PageHead, Panel, PrimaryButton, Select, StatusPill, TextInput } from "../ui"
+import { ConfirmDialog, explain, Field, formatWhen, GhostButton, Modal, PageHead, Panel, PrimaryButton, Select, StatusPill, TextInput } from "../ui"
 
 const STAFF_PERMS = PERMISSIONS.filter((item) => item !== "team")
 
@@ -13,6 +13,7 @@ export default function People() {
   const [customer, setCustomer] = useState(null)
   const [member, setMember] = useState(null)
   const [error, setError] = useState("")
+  const [removeId, setRemoveId] = useState(null)
 
   const savePerson = () => {
     const result = saveCustomer(customer, customer.id || null)
@@ -93,7 +94,9 @@ export default function People() {
                       setCustomer(person)
                     }}
                   >
-                    <p className="font-medium">{person.name}</p>
+                    <p className="font-medium">
+                      {person.name} {person.isBanned && <span className="text-xs text-[#f0c2b8]">· {t("banned")}</span>}
+                    </p>
                     <p className="text-xs text-[#b5a194]">
                       {person.email} · {person.city}
                     </p>
@@ -104,14 +107,27 @@ export default function People() {
                       {stats.orders} {t("ordersCount")} · {money(stats.spent, language)}
                     </p>
                   </div>
-                  <GhostButton
-                    onClick={() => {
-                      setError("")
-                      setCustomer(person)
-                    }}
-                  >
-                    {t("edit")}
-                  </GhostButton>
+                  <div className="flex flex-wrap gap-2">
+                    <GhostButton
+                      onClick={() => {
+                        const result = setCustomerBan(person.id, !person.isBanned)
+                        notify(result.ok ? t("saved") : explain(t, result))
+                      }}
+                    >
+                      {person.isBanned ? t("unbanCustomer") : t("banCustomer")}
+                    </GhostButton>
+                    <GhostButton className="text-[#f0c2b8]" onClick={() => setRemoveId(person.id)}>
+                      {t("deleteCustomer")}
+                    </GhostButton>
+                    <GhostButton
+                      onClick={() => {
+                        setError("")
+                        setCustomer(person)
+                      }}
+                    >
+                      {t("edit")}
+                    </GhostButton>
+                  </div>
                 </Panel>
               )
             })}
@@ -173,6 +189,19 @@ export default function People() {
         </div>
       )}
 
+      {removeId && (
+        <ConfirmDialog
+          text={t("confirmDeleteCustomer")}
+          onCancel={() => setRemoveId(null)}
+          onConfirm={() => {
+            const result = deleteCustomer(removeId)
+            notify(result.ok ? t("saved") : explain(t, result))
+            if (result.ok && customer?.id === removeId) setCustomer(null)
+            setRemoveId(null)
+          }}
+        />
+      )}
+
       {customer && (
         <Modal title={customer.id ? t("edit") : t("addCustomer")} onClose={() => setCustomer(null)}>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -191,7 +220,27 @@ export default function People() {
           </div>
           {error && <p className="mt-3 text-sm text-[#f0c2b8]">{error}</p>}
           {customer.id && <CustomerHistory customerId={customer.id} db={db} t={t} language={language} open={open} />}
-          <div className="mt-4 flex justify-end gap-2">
+          <div className="mt-4 flex flex-wrap justify-end gap-2">
+            {customer.id && customer.id !== "guest-store" && (
+              <>
+                <GhostButton
+                  onClick={() => {
+                    const result = setCustomerBan(customer.id, !customer.isBanned)
+                    if (!result.ok) {
+                      setError(explain(t, result))
+                      return
+                    }
+                    notify(t("saved"))
+                    setCustomer({ ...customer, isBanned: !customer.isBanned })
+                  }}
+                >
+                  {customer.isBanned ? t("unbanCustomer") : t("banCustomer")}
+                </GhostButton>
+                <GhostButton className="text-[#f0c2b8]" onClick={() => setRemoveId(customer.id)}>
+                  {t("deleteCustomer")}
+                </GhostButton>
+              </>
+            )}
             <GhostButton onClick={() => setCustomer(null)}>{t("cancel")}</GhostButton>
             <PrimaryButton onClick={savePerson}>{t("save")}</PrimaryButton>
           </div>
@@ -296,6 +345,7 @@ function CustomerHistory({ customerId, db, t, language, open }) {
                 ))}
               </ul>
               <p className="text-xs text-[#b5a194]">{t("subtotal")} {money(order.subtotal || 0, language)} · {t("shipping")} {money(order.shipping || 0, language)}</p>
+              {order.status === "returned" && order.returnReason && <p className="text-sm text-[#f0c2b8]">{t("returnReason")}: {order.returnReason}</p>}
               <GhostButton onClick={() => show(order.id)}>{t("orders")}</GhostButton>
             </div>
           )}

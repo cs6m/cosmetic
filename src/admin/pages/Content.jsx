@@ -5,12 +5,14 @@ import { ConfirmDialog, explain, Field, GhostButton, ImageField, Modal, PageHead
 
 const SECTION_TARGETS = [
   ["shop-categories", "categories"],
+  ["featured", "featuredSection"],
   ["black-friday", "blackFridaySection"],
   ["new-products", "newSection"],
   ["weekly-offers", "weeklySection"],
 ]
 
 const SECTIONS = [
+  ["featured", "featuredSection"],
   ["black-friday", "blackFridaySection"],
   ["new-products", "newSection"],
   ["weekly-offers", "weeklySection"],
@@ -48,7 +50,7 @@ function BannerDestination({ banner, setBanner, db, t, language }) {
           <Select value={SECTION_TARGETS.some((item) => item[0] === sectionId) ? sectionId : "shop-categories"} onChange={(event) => setBanner({ ...banner, link: `section:${event.target.value}` })}>
             {SECTION_TARGETS.map(([id, label]) => (
               <option key={id} value={id}>
-                {textOf(db.settings.offers?.[id], language, "title") || t(label)}
+                {textOf(db.settings.offers?.[id], language, "title") || (id === "featured" ? (language === "ar" ? db.cms?.featuredTitleAr : db.cms?.featuredTitle) : "") || t(label)}
               </option>
             ))}
           </Select>

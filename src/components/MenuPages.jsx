@@ -95,6 +95,7 @@ export function OrdersScreen({ embedded = false }) {
           const productsTotal = source.subtotal != null ? Number(source.subtotal) : itemsTotal
           const deliveryFee = source.shipping != null ? Number(source.shipping) : Math.max(0, Number(source.total) - productsTotal)
           const note = (db.orderNotes || []).find((item) => item.orderId === order.id)
+          const returnReason = live?.returnReason || order.returnReason || ""
           return (
             <li key={order.id} className="rounded-[24px] bg-ivory p-4 shadow-sm">
               <div className="flex items-start justify-between gap-3">
@@ -132,6 +133,12 @@ export function OrdersScreen({ embedded = false }) {
                 <div className="flex items-center justify-between"><dt className="text-muted">{t("shipping")}</dt><dd>{formatPrice(deliveryFee, language)}</dd></div>
                 <div className="flex items-center justify-between pt-1"><dt className="font-medium text-ink">{t("grandTotal")}</dt><dd className="font-serif text-xl text-espresso">{formatPrice(source.total, language)}</dd></div>
               </dl>
+              {status === "returned" && returnReason && (
+                <p className="mt-3 rounded-2xl bg-[#f6e7df] px-3 py-2 text-sm text-espresso">
+                  <span className="block text-[11px] uppercase tracking-[0.14em] text-cocoa">{t("returnReason")}</span>
+                  {returnReason}
+                </p>
+              )}
               {delivered && note && <p className="mt-3 rounded-2xl bg-cream px-3 py-2 text-sm text-cocoa">{note.note}</p>}
               {delivered && !note && <OrderNote orderId={order.id} author={order.customer?.name || live?.customer?.name || authUser?.name || ""} ownerId={authUser?.id || getUserId()} />}
               {!delivered && <p className="mt-3 text-xs leading-relaxed text-muted">{t("noteAfterDelivery")}</p>}

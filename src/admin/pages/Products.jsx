@@ -20,6 +20,7 @@ import {
 } from "../ui"
 
 const SECTIONS = [
+  ["featured", "featuredSection"],
   ["black-friday", "blackFridaySection"],
   ["new-products", "newSection"],
   ["weekly-offers", "weeklySection"],
@@ -75,10 +76,9 @@ export default function Products() {
   // A product's badges, resolved against the badge list (a deleted badge simply drops out).
   const badgesOf = (product) => (product.badges || []).map((id) => db.badges.find((item) => item.id === id)).filter(Boolean)
 
-  // "Visible" lists every product; "Featured" lists only products that carry a badge.
   const matchers = {
     all: () => true,
-    featured: (product) => badgesOf(product).length > 0,
+    featured: (product) => (product.sections || []).includes("featured"),
     hidden: (product) => product.status === "hidden",
     low: (product) => product.stock <= db.settings.lowStock,
   }

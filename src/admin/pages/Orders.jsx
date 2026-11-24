@@ -1,24 +1,54 @@
 import { useEffect, useMemo, useState } from "react"
+import { SlidersHorizontal } from "lucide-react"
 import { governorateLabel } from "../../checkout"
 import { advanceOrder, money, textOf } from "../../data/adminDb"
 import { useAdmin } from "../context"
-import { ConfirmDialog, explain, formatWhen, GhostButton, PageHead, Panel, PrimaryButton, StatusPill, TextInput } from "../ui"
+import { ConfirmDialog, explain, Field, formatWhen, GhostButton, Modal, PageHead, Panel, PrimaryButton, Select, StatusPill, TextArea, TextInput } from "../ui"
 
-const TABS = ["all", "pending", "confirmed", "preparing", "out", "delivered", "returned"]
+const TABS = ["all", "pending", "preparing", "out", "delivered", "returned"]
+const RANGES = ["all", "today", "week", "month"]
 const ACTION = {
-  pending: ["approve", "return"],
-  confirmed: ["prepared", "return"],
-  preparing: ["dispatch", "return"],
+  pending: ["approve"],
+  confirmed: ["approve"],
+  preparing: ["prepared"],
   out: ["deliver", "return"],
-  delivered: ["return"],
+  delivered: [],
   returned: [],
+}
+
+function startOfWeek(date) {
+  const next = new Date(date)
+  const sinceSaturday = (next.getDay() + 1) % 7
+  next.setDate(next.getDate() - sinceSaturday)
+  next.setHours(0, 0, 0, 0)
+  return next
+}
+
+function inTimeRange(value, range) {
+  if (range === "all") return true
+  const time = new Date(value).getTime()
+  const now = new Date()
+  if (range === "today") {
+    const start = new Date(now)
+    start.setHours(0, 0, 0, 0)
+    return time >= start.getTime()
+  }
+  if (range === "week") return time >= startOfWeek(now).getTime()
+  const month = new Date(now.getFullYear(), now.getMonth(), 1)
+  return time >= month.getTime()
 }
 
 export default function Orders() {
   const { db, t, language, notify } = useAdmin()
   const [tab, setTab] = useState("pending")
   const [query, setQuery] = useState("")
+  const [range, setRange] = useState("all")
+  const [minPrice, setMinPrice] = useState("")
+  const [maxPrice, setMaxPrice] = useState("")
+  const [governorate, setGovernorate] = useState("")
   const [focus, setFocus] = useState("")
+  const [returnNote, setReturnNote] = useState("")
+  const [returnError, setReturnError] = useState("")
 
   useEffect(() => {
     let id = ""
@@ -39,23 +69,34 @@ export default function Orders() {
     document.getElementById(`order-${focus}`)?.scrollIntoView({ behavior: "smooth", block: "center" })
   }, [focus, tab, query])
   const [pendingAction, setPendingAction] = useState(null)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const activeFilters = [range !== "all", minPrice !== "", maxPrice !== "", governorate !== ""].filter(Boolean).length
 
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase()
+    const min = minPrice === "" ? null : Number(minPrice)
+    const max = maxPrice === "" ? null : Number(maxPrice)
     return db.orders.filter((order) => {
-      if (tab !== "all" && order.status !== tab) return false
+      const status = order.status === "confirmed" ? "pending" : order.status
+      if (tab !== "all" && status !== tab) return false
+      if (!inTimeRange(order.date, range)) return false
+      if (min != null && Number.isFinite(min) && !(Number(order.total) > min)) return false
+      if (max != null && Number.isFinite(max) && !(Number(order.total) < max)) return false
+      if (governorate && order.customer?.city !== governorate) return false
       if (!needle) return true
       const person = db.customers.find((item) => item.id === order.customerId)
       const buyer = order.customer || {}
-      return `${order.id} ${person?.name || ""} ${person?.email || ""} ${buyer.name || ""} ${buyer.phone || ""}`.toLowerCase().includes(needle)
+      return `${order.id} ${person?.name || ""} ${person?.email || ""} ${person?.phone || ""} ${buyer.name || ""} ${buyer.phone || ""}`.toLowerCase().includes(needle)
     })
-  }, [db, tab, query])
+  }, [db, tab, query, range, minPrice, maxPrice, governorate])
 
-  const run = (orderId, action) => {
-    const result = advanceOrder(orderId, action)
+  const run = (orderId, action, returnReason) => {
+    const result = advanceOrder(orderId, action, { returnReason })
     if (!result.ok) notify(explain(t, result))
     else notify(t("saved"))
     setPendingAction(null)
+    setReturnNote("")
+    setReturnError("")
   }
 
   return (
@@ -74,14 +115,85 @@ export default function Orders() {
             </button>
           ))}
         </div>
-        <TextInput
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={t("searchOrders")}
-          className="lg:max-w-xs"
-          aria-label={t("searchOrders")}
-        />
+        <div className="flex items-center gap-2">
+          <TextInput
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={t("searchOrdersHint")}
+            className="lg:max-w-xs"
+            aria-label={t("searchOrders")}
+          />
+          <button
+            type="button"
+            aria-label={t("filters")}
+            onClick={() => setFiltersOpen(true)}
+            className={`relative grid h-11 w-11 shrink-0 place-items-center rounded-full border ${activeFilters ? "border-[#c6a15b] bg-[#c6a15b] text-[#2a1c16]" : "border-[#3a2d26] bg-[#1b1613] text-[#e7d3c4]"}`}
+          >
+            <SlidersHorizontal size={18} />
+            {activeFilters > 0 && (
+              <span className="absolute -top-1 -end-1 grid h-5 min-w-5 place-items-center rounded-full bg-[#2a1c16] px-1 text-[10px] text-[#e4c99a]">
+                {activeFilters}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
+      {filtersOpen && (
+        <Modal title={t("filters")} onClose={() => setFiltersOpen(false)}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label={t("timeRange")}>
+              <Select value={range} onChange={(event) => setRange(event.target.value)} aria-label={t("timeRange")}>
+                {RANGES.map((id) => (
+                  <option key={id} value={id}>
+                    {t(id === "all" ? "allTime" : id === "week" ? "thisWeek" : id === "month" ? "thisMonth" : "today")}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label={t("orderStatus")}>
+              <Select value={tab} onChange={(event) => setTab(event.target.value)} aria-label={t("orderStatus")}>
+                {TABS.map((id) => (
+                  <option key={id} value={id}>
+                    {t(id === "all" ? "all" : id)}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label={t("governorate")}>
+              <Select value={governorate} onChange={(event) => setGovernorate(event.target.value)} aria-label={t("governorate")}>
+                <option value="">{t("all")}</option>
+                {(db.settings.governorates || []).map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {governorateLabel(item.id, language, db.settings.governorates)}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label={t("minPrice")}>
+                <TextInput inputMode="numeric" value={minPrice} onChange={(event) => setMinPrice(event.target.value.replace(/[^\d.]/g, ""))} placeholder="IQD" aria-label={t("minPrice")} />
+              </Field>
+              <Field label={t("maxPrice")}>
+                <TextInput inputMode="numeric" value={maxPrice} onChange={(event) => setMaxPrice(event.target.value.replace(/[^\d.]/g, ""))} placeholder="IQD" aria-label={t("maxPrice")} />
+              </Field>
+            </div>
+          </div>
+          <div className="mt-4 flex justify-end gap-2">
+            <GhostButton
+              onClick={() => {
+                setRange("all")
+                setTab("all")
+                setMinPrice("")
+                setMaxPrice("")
+                setGovernorate("")
+              }}
+            >
+              {t("clearFilters")}
+            </GhostButton>
+            <PrimaryButton onClick={() => setFiltersOpen(false)}>{t("apply")}</PrimaryButton>
+          </div>
+        </Modal>
+      )}
 
       {rows.length === 0 ? (
         <Panel className="px-4 py-12 text-center text-sm text-[#b5a194]">{t("noResults")}</Panel>
@@ -118,6 +230,12 @@ export default function Orders() {
                     </li>
                   ))}
                 </ul>
+                {order.status === "returned" && order.returnReason && (
+                  <div className="mt-3 rounded-2xl bg-[#3a2422] px-3 py-3">
+                    <p className="text-[11px] text-[#f0c2b8]">{t("returnReason")}</p>
+                    <p className="mt-1 text-sm text-[#f6f1eb]">{order.returnReason}</p>
+                  </div>
+                )}
                 {order.subtotal != null && (
                   <dl className="mt-3 grid gap-1 text-sm text-[#e7d3c4] sm:max-w-xs sm:ms-auto">
                     <div className="flex justify-between gap-4"><dt className="text-[#b5a194]">{t("subtotal")}</dt><dd>{money(order.subtotal, language)}</dd></div>
@@ -129,7 +247,15 @@ export default function Orders() {
                   <div className="mt-3 flex flex-wrap gap-2">
                     {actions.map((action) =>
                       action === "return" ? (
-                        <GhostButton key={action} className="text-[#f0c2b8]" onClick={() => setPendingAction({ id: order.id, action })}>
+                        <GhostButton
+                        key={action}
+                        className="text-[#f0c2b8]"
+                        onClick={() => {
+                          setReturnNote("")
+                          setReturnError("")
+                          setPendingAction({ id: order.id, action })
+                        }}
+                      >
                           {t("returnOrder")}
                         </GhostButton>
                       ) : (
@@ -146,12 +272,55 @@ export default function Orders() {
         </div>
       )}
 
-      {pendingAction && (
+      {pendingAction && pendingAction.action !== "return" && (
         <ConfirmDialog
-          text={pendingAction.action === "deliver" ? t("confirmDeliver") : pendingAction.action === "return" ? t("confirmReturn") : t("confirm")}
+          text={pendingAction.action === "deliver" ? t("confirmDeliver") : t("confirm")}
           onCancel={() => setPendingAction(null)}
           onConfirm={() => run(pendingAction.id, pendingAction.action)}
         />
+      )}
+      {pendingAction?.action === "return" && (
+        <Modal
+          title={t("returnReason")}
+          onClose={() => {
+            setPendingAction(null)
+            setReturnError("")
+          }}
+        >
+          <Field label={t("returnReason")}>
+            <TextArea
+              value={returnNote}
+              onChange={(event) => {
+                setReturnNote(event.target.value)
+                setReturnError("")
+              }}
+              placeholder={t("returnReasonNeed")}
+              aria-label={t("returnReason")}
+            />
+          </Field>
+          {returnError && <p className="mt-3 text-sm text-[#f0c2b8]">{returnError}</p>}
+          <div className="mt-4 flex justify-end gap-2">
+            <GhostButton
+              onClick={() => {
+                setPendingAction(null)
+                setReturnError("")
+              }}
+            >
+              {t("cancel")}
+            </GhostButton>
+            <PrimaryButton
+              onClick={() => {
+                if (returnNote.trim().length < 2) {
+                  setReturnError(t("returnReasonNeed"))
+                  return
+                }
+                run(pendingAction.id, "return", returnNote.trim())
+              }}
+            >
+              {t("returnOrder")}
+            </PrimaryButton>
+          </div>
+        </Modal>
       )}
     </div>
   )

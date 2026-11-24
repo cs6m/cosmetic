@@ -148,6 +148,7 @@ export function explain(t, result) {
   if (result.reason === "password") return t("passwordRule")
   if (result.reason === "mismatch") return t("passwordMismatch")
   if (result.reason === "forbidden") return t("accessDenied")
+  if (result.reason === "return-reason") return t("returnReasonNeed")
   return t("invalidForm")
 }
 

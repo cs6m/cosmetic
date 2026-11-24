@@ -183,6 +183,7 @@ export function ShopProvider({ children }) {
             subtotal: order.subtotal,
             shipping: order.shipping,
             customer: order.customer,
+            returnReason: order.returnReason || "",
             customerId: order.customerId,
             ownerId: order.ownerId,
             source: order.source,
@@ -594,6 +595,14 @@ export function ShopProvider({ children }) {
       return { ok: false, reason: "config" }
     }
     if (!cartCount) return { ok: false, reason: "empty" }
+    if (sessionUserRef.current) {
+      try {
+        const mine = await getMyCustomer(sessionUserRef.current.id)
+        if (mine?.isBanned) return { ok: false, reason: "banned" }
+      } catch {
+        /* the database trigger still blocks a banned account */
+      }
+    }
     if (Object.keys(checkoutErrors(form || {}, governorates)).length) return { ok: false, reason: "invalid" }
     const customer = cleanCheckout(form)
     const shipping = deliveryFee(customer.city, governorates, subtotal)
@@ -601,7 +610,7 @@ export function ShopProvider({ children }) {
     const taken = orderHistory.map((item) => Number(String(item.id).replace(/\D/g, ""))).filter((value) => value > 0)
     const buyerId = sessionUserRef.current?.id || "guest-store"
     const order = {
-      id: `GL-${Math.max(1049, ...taken, 0) + 1}`,
+      id: `GL-${String((taken.length ? Math.max(...taken) : 0) + 1).padStart(3, "0")}`,
       date: new Date().toISOString(),
       status: "pending",
       customerId: buyerId,
@@ -634,6 +643,7 @@ export function ShopProvider({ children }) {
       setCart({})
       return { ok: true, id: placed.id }
     } catch (error) {
+      if (/BANNED/i.test(error?.message || "")) return { ok: false, reason: "banned" }
       notify(reportCustomerError(error, language))
       return { ok: false, reason: "sync" }
     }

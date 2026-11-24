@@ -134,11 +134,20 @@ function defaultSettings() {
         textAr: "قائمة قصيرة من اختيارات هذا الأسبوع.",
         image: "",
       },
+      featured: {
+        kicker: "The edit",
+        kickerAr: "اختيارنا",
+        title: "Featured Products",
+        titleAr: "المنتجات المختارة",
+        text: "Pieces the shop has chosen for the homepage.",
+        textAr: "منتجات يختارها المتجر للصفحة الرئيسية.",
+        image: "",
+      },
     },
   }
 }
 
-export const SECTION_IDS = ["black-friday", "new-products", "weekly-offers"]
+export const SECTION_IDS = ["black-friday", "new-products", "weekly-offers", "featured"]
 
 export const BENEFIT_ICONS = ICON_NAMES
 
@@ -149,7 +158,7 @@ function defaultCms() {
     shopTitle: "Shop By Category",
     shopTitleAr: "تسوّقي حسب القسم",
     featuredTitle: "Featured Products",
-    featuredTitleAr: "منتجات مختارة",
+    featuredTitleAr: "المنتجات المختارة",
     exploreTitle: "Explore Our Beauty Collection",
     exploreTitleAr: "اكتشفي مجموعة الجمال",
     exploreText: "Discover premium skincare, makeup and self-care essentials for your best skin.",
@@ -250,7 +259,7 @@ function legacyBadgeIds(label) {
 function sectionsForBadge(label) {
   if (label === "New") return ["new-products"]
   if (label === "Sale") return ["black-friday"]
-  if (label === "Best Seller") return ["weekly-offers"]
+  if (label === "Best Seller") return ["weekly-offers", "featured"]
   return []
 }
 
@@ -526,8 +535,8 @@ function buildOrders(products, customers) {
     const daysAgo = i < 18 ? Math.floor(rand() * 7) : Math.floor(rand() * 120)
     const date = daysAgoDate(daysAgo, 9 + Math.floor(rand() * 10))
     let status = "delivered"
-    if (daysAgo === 0) status = ["pending", "confirmed", "preparing", "out"][Math.floor(rand() * 4)]
-    else if (daysAgo < 3) status = ["confirmed", "preparing", "out", "delivered"][Math.floor(rand() * 4)]
+    if (daysAgo === 0) status = ["pending", "preparing", "out"][Math.floor(rand() * 3)]
+    else if (daysAgo < 3) status = ["preparing", "out", "delivered"][Math.floor(rand() * 3)]
     else if (rand() < 0.08) status = "returned"
     const count = 1 + Math.floor(rand() * 3)
     const items = []
@@ -650,6 +659,7 @@ export function buildSeed() {
     badges: seedBadges(),
     reviews: seedReviews(),
     orderNotes: [],
+    pageVisits: [],
     faqs: seedFaqs(),
     socials: seedSocials(),
     cms: defaultCms(),
@@ -784,6 +794,7 @@ function remoteShell() {
     customers: [],
     reviews: [],
     orderNotes: [],
+    pageVisits: [],
     banners: [],
     brands: [],
     categories: [],
@@ -822,7 +833,7 @@ function normalizeShopOrder(order) {
       delivery: "out",
       completed: "delivered",
       pending: "pending",
-      confirmed: "confirmed",
+      confirmed: "preparing",
       preparing: "preparing",
       out: "out",
       delivered: "delivered",
@@ -841,6 +852,7 @@ function normalizeShopOrder(order) {
     shipping: Number.isFinite(shipping) ? shipping : null,
     payment: "cod",
     customer,
+    returnReason: order.returnReason || "",
     customerId: order.customerId || "guest-store",
     source: "storefront",
     inventoryApplied: status === "delivered",
@@ -883,7 +895,7 @@ export function ensure() {
 // signed-in team member, never for a guest.
 function cacheable(db) {
   if (!syncEnabled || isStaffSession()) return db
-  return { ...db, customers: [], team: [], audit: [], orders: db.orders.filter((order) => order.source === "storefront") }
+  return { ...db, customers: [], team: [], audit: [], pageVisits: [], orders: db.orders.filter((order) => order.source === "storefront") }
 }
 
 function write(next) {
@@ -1065,6 +1077,7 @@ export function canReview(orderId, productId) {
 
 export function productsForSection(list, id) {
   const assigned = (list || []).filter((product) => (product.sections || []).includes(id))
+  if (id === "featured") return assigned
   if (assigned.length) return assigned
   return getOfferProducts(id, list)
 }
@@ -1246,21 +1259,23 @@ export async function recordStorefrontOrder(order) {
 }
 
 const FLOW = {
-  pending: { approve: "confirmed", return: "returned" },
-  confirmed: { prepared: "preparing", return: "returned" },
-  preparing: { dispatch: "out", return: "returned" },
+  pending: { approve: "preparing" },
+  confirmed: { approve: "preparing" },
+  preparing: { prepared: "out" },
   out: { deliver: "delivered", return: "returned" },
-  delivered: { return: "returned" },
+  delivered: {},
   returned: {},
 }
 
-export function advanceOrder(orderId, action) {
+export function advanceOrder(orderId, action, extra = {}) {
   const db = ensure()
   const user = actor(db)
   if (!allowed(user, "orders")) return { ok: false, reason: "forbidden" }
   const order = db.orders.find((item) => item.id === orderId)
   const status = FLOW[order?.status]?.[action]
   if (!order || !status) return { ok: false, reason: "illegal" }
+  const returnReason = status === "returned" ? cleanText(extra.returnReason, 500) : order.returnReason || ""
+  if (status === "returned" && returnReason.length < 2) return { ok: false, reason: "return-reason" }
 
   let products = db.products
   if (status === "delivered" && !order.inventoryApplied) {
@@ -1286,6 +1301,7 @@ export function advanceOrder(orderId, action) {
   const updated = {
     ...order,
     status,
+    returnReason,
     inventoryApplied: status === "delivered" ? true : status === "returned" ? false : order.inventoryApplied,
     history: [...(order.history || []), { status, at: new Date().toISOString(), by: user.email }],
   }
@@ -1483,21 +1499,51 @@ export function saveCustomer(input, editingId) {
   const email = cleanText(input.email, 80).toLowerCase()
   if (!name || !email.includes("@")) return { ok: false, reason: "invalid" }
   if (db.customers.some((item) => item.email === email && item.id !== editingId)) return { ok: false, reason: "email" }
+  const existing = editingId ? db.customers.find((item) => item.id === editingId) : null
   const record = {
     id: editingId || `c-${Date.now()}`,
     name,
     email,
     phone: cleanText(input.phone, 24),
     city: cleanText(input.city, 40),
-    registeredAt: editingId
-      ? db.customers.find((item) => item.id === editingId)?.registeredAt || new Date().toISOString()
-      : new Date().toISOString(),
+    neighborhood: existing?.neighborhood || "",
+    street: existing?.street || "",
+    building: existing?.building || "",
+    details: existing?.details || "",
+    ownerId: existing?.ownerId || null,
+    isBanned: Boolean(existing?.isBanned),
+    registeredAt: existing?.registeredAt || new Date().toISOString(),
   }
   const customers = editingId
     ? db.customers.map((item) => (item.id === editingId ? record : item))
     : [record, ...db.customers]
   const saved = commit({ ...db, customers })
   if (saved.ok) pushAudit(user, `${editingId ? "Updated" : "Added"} customer ${name}`)
+  return saved
+}
+
+export function setCustomerBan(id, banned) {
+  const db = ensure()
+  const user = actor(db)
+  if (!allowed(user, "customers")) return { ok: false, reason: "forbidden" }
+  const person = db.customers.find((item) => item.id === id)
+  if (!person || person.id === "guest-store") return { ok: false, reason: "invalid" }
+  const customers = db.customers.map((item) => (item.id === id ? { ...item, isBanned: Boolean(banned) } : item))
+  const saved = commit({ ...db, customers })
+  if (saved.ok) pushAudit(user, `${banned ? "Banned" : "Unbanned"} customer ${person.name}`)
+  return saved
+}
+
+export function deleteCustomer(id) {
+  const db = ensure()
+  const user = actor(db)
+  if (!allowed(user, "customers")) return { ok: false, reason: "forbidden" }
+  const person = db.customers.find((item) => item.id === id)
+  if (!person || person.id === "guest-store") return { ok: false, reason: "invalid" }
+  if (!db.customers.some((item) => item.id === "guest-store")) return { ok: false, reason: "invalid" }
+  const orders = db.orders.map((order) => (order.customerId === id ? { ...order, customerId: "guest-store" } : order))
+  const saved = commit({ ...db, orders, customers: db.customers.filter((item) => item.id !== id) })
+  if (saved.ok) pushAudit(user, `Deleted customer ${person.name}`)
   return saved
 }
 
@@ -1595,12 +1641,15 @@ export function saveSettings(input) {
   const user = actor(db)
   if (!allowed(user, "settings")) return { ok: false, reason: "forbidden" }
   const offers = {}
-  ;["black-friday", "new-products", "weekly-offers"].forEach((id) => {
+  SECTION_IDS.forEach((id) => {
     const source = input.offers?.[id] || {}
     offers[id] = {
       kicker: cleanText(source.kicker, 40),
+      kickerAr: cleanText(source.kickerAr, 40),
       title: cleanText(source.title, 48),
+      titleAr: cleanText(source.titleAr, 48),
       text: cleanText(source.text, 140),
+      textAr: cleanText(source.textAr, 140),
       image: source.image ? safeImage(source.image) : "",
     }
   })
@@ -1661,21 +1710,39 @@ export function rangeBounds(preset, custom) {
 }
 
 export function isRevenue(order) {
-  return ["confirmed", "preparing", "out", "delivered"].includes(order.status)
+  return ["preparing", "out", "delivered"].includes(order.status)
+}
+
+function visitsForDay(visits, date) {
+  const key = dayKey(date)
+  return (visits || []).filter((visit) => dayKey(visit.createdAt) === key).length
+}
+
+export function visitStats(db) {
+  const visits = db.pageVisits || []
+  const now = new Date()
+  const startToday = new Date(now)
+  startToday.setHours(0, 0, 0, 0)
+  const startMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+  const byVisitor = new Map()
+  visits.forEach((visit) => {
+    const current = byVisitor.get(visit.visitorId) || { visitorId: visit.visitorId, count: 0, last: visit.createdAt }
+    current.count += 1
+    if (new Date(visit.createdAt) > new Date(current.last)) current.last = visit.createdAt
+    byVisitor.set(visit.visitorId, current)
+  })
+  const returning = [...byVisitor.values()].filter((item) => item.count >= 2).sort((a, b) => new Date(b.last) - new Date(a.last))
+  return {
+    today: visits.filter((visit) => new Date(visit.createdAt) >= startToday).length,
+    month: visits.filter((visit) => new Date(visit.createdAt) >= startMonth).length,
+    total: visits.length,
+    returning,
+  }
 }
 
 function dayKey(date) {
   const value = new Date(date)
   return `${value.getFullYear()}-${value.getMonth()}-${value.getDate()}`
-}
-
-function visitorsForDay(date) {
-  const key = dayKey(date)
-  let hash = 2166136261
-  for (let i = 0; i < key.length; i += 1) hash = Math.imul(hash ^ key.charCodeAt(i), 16777619)
-  const base = 90 + (Math.abs(hash) % 150)
-  const weekend = date.getDay() === 0 || date.getDay() === 6 ? 1.28 : 1
-  return Math.round(base * weekend)
 }
 
 export function dashboardMetrics(db, preset, custom) {
@@ -1698,23 +1765,20 @@ export function dashboardMetrics(db, preset, custom) {
   const low = db.products
     .filter((product) => product.status !== "hidden" && product.stock <= (db.settings.lowStock || 8))
     .sort((a, b) => a.stock - b.stock)
-  const series = buildSeries(bounds, preset, revenueOrders, orders)
+  const series = buildSeries(bounds, preset, revenueOrders, orders, db.pageVisits || [])
   return { bounds, orders, sales, aov, newCustomers, top, low, series, orderCount: orders.length }
 }
 
 // One point per hour for "today", otherwise one point per calendar day. Every point
 // carries its real timestamp so the chart can print true dates and the dashboard can
 // open that exact day.
-function buildSeries(bounds, preset, orders, allOrders) {
+function buildSeries(bounds, preset, orders, allOrders, visits) {
   const stamps = []
   const sales = []
   const visitors = []
   const counts = []
   const round = (value) => Math.round(value)
   if (preset === "today") {
-    const weights = [1, 1, 1, 1, 1, 2, 3, 4, 6, 7, 8, 8, 7, 8, 9, 8, 7, 6, 5, 4, 3, 2, 2, 1]
-    const todayVisits = visitorsForDay(bounds.start)
-    const weightSum = weights.reduce((sum, value) => sum + value, 0)
     for (let hour = 0; hour < 24; hour += 1) {
       const stamp = new Date(bounds.start)
       stamp.setHours(hour, 0, 0, 0)
@@ -1722,7 +1786,7 @@ function buildSeries(bounds, preset, orders, allOrders) {
       stamps.push(stamp.getTime())
       sales.push(round(inHour.reduce((sum, order) => sum + order.total, 0)))
       counts.push(allOrders.filter((order) => inRange(order.date, bounds) && new Date(order.date).getHours() === hour).length)
-      visitors.push(Math.round((todayVisits * weights[hour]) / weightSum))
+      visitors.push(visits.filter((visit) => inRange(visit.createdAt, bounds) && new Date(visit.createdAt).getHours() === hour).length)
     }
     return { granularity: "hour", stamps, sales, visitors, counts }
   }
@@ -1743,13 +1807,13 @@ function buildSeries(bounds, preset, orders, allOrders) {
     stamps.push(cursor.getTime())
     sales.push(round(salesByDay.get(key) || 0))
     counts.push(countByDay.get(key) || 0)
-    visitors.push(visitorsForDay(cursor))
+    visitors.push(visitsForDay(visits, cursor))
     cursor.setDate(cursor.getDate() + 1)
   }
   return { granularity: "day", stamps, sales, visitors, counts }
 }
 
-const STATUS_ORDER = ["pending", "confirmed", "preparing", "out", "delivered", "returned"]
+const STATUS_ORDER = ["pending", "preparing", "out", "delivered", "returned"]
 
 // Everything the dashboard shows when the admin clicks or scrubs to one day on a chart.
 export function dayDetails(db, timestamp) {
@@ -1761,7 +1825,7 @@ export function dayDetails(db, timestamp) {
   const orders = db.orders.filter((order) => inRange(order.date, bounds)).sort((a, b) => new Date(b.date) - new Date(a.date))
   const revenueOrders = orders.filter(isRevenue)
   const sales = Math.round(revenueOrders.reduce((sum, order) => sum + order.total, 0))
-  const visitors = visitorsForDay(start)
+  const visitors = (db.pageVisits || []).filter((visit) => inRange(visit.createdAt, bounds)).length
   const units = revenueOrders.reduce((sum, order) => sum + order.items.reduce((inner, item) => inner + (Number(item.qty) || 0), 0), 0)
   const tally = new Map()
   revenueOrders.forEach((order) => {

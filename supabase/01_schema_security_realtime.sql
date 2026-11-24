@@ -106,7 +106,7 @@ create table if not exists public.products (
   status         text not null default 'active' check (status in ('active', 'hidden')),
   badge          text,                                    -- legacy label of the first badge
   badges         text[] not null default '{}',            -- badge ids (see public.badges)
-  sections       text[] not null default '{}',            -- black-friday | new-products | weekly-offers
+  sections       text[] not null default '{}',            -- black-friday | new-products | weekly-offers | featured | featured
   rating         numeric(2, 1) not null default 5,
   reviews        integer not null default 0,
   benefits       jsonb not null default '[]'::jsonb,     -- [{icon, label, labelAr}]
@@ -142,14 +142,15 @@ alter table public.customers add column if not exists neighborhood text not null
 alter table public.customers add column if not exists street text not null default '';
 alter table public.customers add column if not exists building text not null default '';
 alter table public.customers add column if not exists address_details text not null default '';
+alter table public.customers add column if not exists is_banned boolean not null default false;
 
-create sequence if not exists public.order_number_seq start with 5000;
+create sequence if not exists public.order_number_seq start with 1;
 
 create table if not exists public.orders (
   id                text primary key,
   placed_at         timestamptz not null default now(),
   status            text not null default 'pending'
-                      check (status in ('pending', 'confirmed', 'preparing', 'out', 'delivered', 'returned')),
+                      check (status in ('pending', 'preparing', 'out', 'delivered', 'returned')),
   -- Order lines are a snapshot of what was bought, at the price paid:
   -- [{id, name, nameAr, image, qty, price}]. They stay valid if a product is later edited or deleted.
   items             jsonb not null default '[]'::jsonb,
@@ -162,6 +163,7 @@ create table if not exists public.orders (
   source            text not null default 'storefront' check (source in ('admin', 'storefront')),
   inventory_applied boolean not null default false,
   history           jsonb not null default '[]'::jsonb,     -- [{status, at, by}]
+  return_reason     text not null default '',
   owner_id          uuid default auth.uid() references auth.users (id) on delete set null,
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now()
@@ -382,7 +384,7 @@ create trigger trg_profiles_keep_admin before update or delete on public.profile
 -- 3e. Unique, server-issued order numbers (used when a client-picked id collides)
 create or replace function public.next_order_id()
 returns text language sql security definer set search_path = public as $$
-  select 'GL-' || nextval('public.order_number_seq')::text;
+  select 'GL-' || lpad(nextval('public.order_number_seq')::text, 3, '0');
 $$;
 grant execute on function public.next_order_id() to anon, authenticated;
 
@@ -474,15 +476,17 @@ begin
     return new;
   end if;
   ok := case old.status
-          when 'pending'   then new.status in ('confirmed', 'returned')
-          when 'confirmed' then new.status in ('preparing', 'returned')
-          when 'preparing' then new.status in ('out', 'returned')
+          when 'pending'   then new.status = 'preparing'
+          when 'preparing' then new.status = 'out'
           when 'out'       then new.status in ('delivered', 'returned')
-          when 'delivered' then new.status in ('returned')
+          when 'confirmed' then new.status = 'preparing'
           else false
         end;
   if not ok then
     raise exception 'Illegal order status change: % -> %', old.status, new.status using errcode = 'P0001';
+  end if;
+  if new.status = 'returned' and old.status is distinct from 'returned' and length(trim(coalesce(new.return_reason, ''))) < 2 then
+    raise exception 'A return reason is required' using errcode = 'P0001';
   end if;
   return new;
 end;
