@@ -99,28 +99,6 @@ export default function Overview() {
         <Metric icon={Users} label={t("returningVisitors")} value={visits.returning.length.toLocaleString("en-US")} hint={t("returningLead")} />
       </div>
 
-      <Panel className="p-4">
-        <h2 className="font-serif text-2xl text-[#f6f1eb]">{t("returningVisitors")}</h2>
-        <p className="mt-1 text-sm text-[#b5a194]">{t("returningLead")}</p>
-        {visits.returning.length === 0 ? (
-          <p className="mt-4 text-sm text-[#b5a194]">{t("noReturning")}</p>
-        ) : (
-          <ul className="mt-4 divide-y divide-[#3a2d26]">
-            {visits.returning.slice(0, 12).map((visit) => (
-              <li key={visit.visitorId} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
-                <span className="font-mono text-xs text-[#e7d3c4]">{visit.visitorId}</span>
-                <span className="text-[#f6f1eb]">
-                  {visit.count} {t("visitCount")}
-                </span>
-                <span className="text-xs text-[#b5a194]">
-                  {t("lastVisit")} · {formatWhen(visit.last, language)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Panel>
-
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <Metric icon={Wallet} label={t("sales")} value={money(metrics.sales, language)} hint={t("salesHint")} />
         <Metric icon={ShoppingBag} label={t("totalOrders")} value={metrics.orderCount} />

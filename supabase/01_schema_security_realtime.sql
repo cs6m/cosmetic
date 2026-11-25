@@ -397,6 +397,7 @@ declare
   line     jsonb;
   prod     public.products%rowtype;
   gov      public.governorates%rowtype;
+  buyer    text;
   eff      numeric;
   paid     numeric;
   qty      integer;
@@ -415,6 +416,18 @@ begin
   new.source            := 'storefront';
   new.payment           := 'cod';
   new.customer_id       := 'guest-store';
+  -- A signed-in shopper's order belongs to their account. Anonymous checkout stays on the guest row.
+  if auth.uid() is not null and coalesce(auth.jwt() ->> 'is_anonymous', 'false') <> 'true' then
+    select c.id into buyer
+      from public.customers c
+     where c.id <> 'guest-store'
+       and (c.id = auth.uid()::text or c.owner_id = auth.uid())
+     order by case when c.id = auth.uid()::text then 0 else 1 end
+     limit 1;
+    if buyer is not null then
+      new.customer_id := buyer;
+    end if;
+  end if;
   new.inventory_applied := false;
   new.placed_at         := now();
   new.history           := jsonb_build_array(jsonb_build_object('status', 'pending', 'at', now(), 'by', 'storefront'));
