@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Plus } from "lucide-react"
-import { customerStats, deleteCustomer, hashPassword, money, PERMISSIONS, removeMember, saveCustomer, saveMember, setCustomerBan } from "../../data/adminDb"
+import { customerStats, deleteCustomer, hashPassword, money, ordersForCustomer, PERMISSIONS, removeMember, saveCustomer, saveMember, setCustomerBan } from "../../data/adminDb"
 import { governorateLabel } from "../../checkout"
 import { useAdmin } from "../context"
 import { ConfirmDialog, explain, Field, formatWhen, GhostButton, Modal, PageHead, Panel, PrimaryButton, Select, StatusPill, TextInput } from "../ui"
@@ -307,7 +307,8 @@ export default function People() {
 
 function CustomerHistory({ customerId, db, t, language, open }) {
   const [opened, setOpened] = useState(null)
-  const orders = db.orders.filter((order) => order.customerId === customerId)
+  const person = db.customers.find((item) => item.id === customerId)
+  const orders = ordersForCustomer(db, person)
   const spent = orders.filter((order) => order.status !== "returned").reduce((sum, order) => sum + Number(order.total || 0), 0)
   const show = (orderId) => {
     try {

@@ -170,10 +170,11 @@ export function ShopProvider({ children }) {
   const liveDb = useDb()
   useEffect(() => {
     if (syncEnabled) {
-      const uid = getUserId()
+      const uid = authUser?.id || getUserId()
+      if (!uid) return
       setOrderHistory(
         liveDb.orders
-          .filter((order) => uid && (order.ownerId === uid || order.customerId === uid))
+          .filter((order) => order.ownerId === uid || order.customerId === uid)
           .map((order) => ({
             id: order.id,
             date: order.date,
@@ -205,7 +206,7 @@ export function ShopProvider({ children }) {
       saveOrders(next)
       return next
     })
-  }, [liveDb.orders])
+  }, [liveDb.orders, authUser?.id])
 
   useEffect(() => {
     const renamed = (event) =>

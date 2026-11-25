@@ -7,6 +7,7 @@ import {
   attachSync,
   changeOwnPassword,
   ensureSession,
+  getSyncRole,
   isStaffSession,
   pushChanges,
   rememberPassword,
@@ -1243,12 +1244,11 @@ export async function recordStorefrontOrder(order) {
   // A stuck catalog load must not keep the order on this phone. Write it as soon as there is a session.
   const session = await ensureSession()
   const user = session?.user
-  const providers = user?.app_metadata?.providers || []
-  const googleShopper = Boolean(user && !user.is_anonymous && (user.app_metadata?.provider === "google" || providers.includes("google")))
-  const linked = googleShopper
+  const shopper = Boolean(user && !user.is_anonymous && !getSyncRole())
+  const linked = shopper
     ? { ...order, customerId: user.id, ownerId: user.id }
     : { ...order, customerId: "guest-store", ownerId: user?.id || null }
-  if (googleShopper) await upsertMyCustomer(user, order.customer || {})
+  if (shopper) await upsertMyCustomer(user, order.customer || {})
   const client = requireSupabase()
   const saved = await insertStorefrontOrder(linked)
   if (!saved?.id) throw new Error("The database did not return the new order.")
@@ -1852,8 +1852,26 @@ export function dayDetails(db, timestamp) {
   }
 }
 
+function samePhone(left, right) {
+  const digits = (value) => String(value || "").replace(/\D/g, "")
+  const a = digits(left)
+  const b = digits(right)
+  return a.length >= 10 && a === b
+}
+
+export function ordersForCustomer(db, person) {
+  if (!person || person.id === "guest-store") return []
+  return (db.orders || []).filter((order) => {
+    if (order.customerId === person.id) return true
+    if (person.ownerId && order.ownerId === person.ownerId) return true
+    if (order.ownerId && order.ownerId === person.id) return true
+    return samePhone(order.customer?.phone, person.phone)
+  })
+}
+
 export function customerStats(db, customerId) {
-  const orders = db.orders.filter((order) => order.customerId === customerId && order.status !== "returned")
+  const person = db.customers.find((item) => item.id === customerId)
+  const orders = ordersForCustomer(db, person).filter((order) => order.status !== "returned")
   const spent = orders.filter(isRevenue).reduce((sum, order) => sum + order.total, 0)
   return { orders: orders.length, spent: Math.round(spent * 100) / 100 }
 }
