@@ -144,7 +144,10 @@ export default function HomeScreen() {
   const picks = productsForSection(products, "featured").slice(0, 8)
   const shelves = offerProducts(products)
   const copyOf = (id) => textOf(settings.offers?.[id], language, "title")
-  const featuredTitle = textOf(settings.offers?.featured, language, "title") || cmsText(cms, language, "featuredTitle") || t("featured")
+  const featuredCopy = settings.offers?.featured || {}
+  const featuredTitle = textOf(featuredCopy, language, "title") || cmsText(cms, language, "featuredTitle") || t("featured")
+  const featuredKicker = textOf(featuredCopy, language, "kicker")
+  const featuredText = textOf(featuredCopy, language, "text")
 
   return (
     <div>
@@ -195,7 +198,9 @@ export default function HomeScreen() {
       ))}
 
       <section id="featured" className="scroll-mt-4 overflow-hidden rounded-3xl bg-[#f8f1ea] px-4 py-6">
+        {featuredKicker && <p className="mb-1 text-[11px] uppercase tracking-[0.16em] text-cocoa/80">{featuredKicker}</p>}
         <SectionTitle title={featuredTitle} action={t("viewAll")} onAction={() => openOffer("featured")} />
+        {featuredText && <p className="mt-2 max-w-[36ch] text-sm leading-relaxed text-muted">{featuredText}</p>}
         {picks.length === 0 ? (
           <p className="mt-4 text-sm text-muted">{t("featuredEmpty")}</p>
         ) : (

@@ -102,9 +102,15 @@ export default function CollectionScreen() {
 
       <div className="mt-6 flex items-end justify-between px-5">
         <div>
+          {showOffer && textOf(settings.offers?.[offer], language, "kicker") && (
+            <p className="text-[11px] uppercase tracking-[0.16em] text-cocoa/80">{textOf(settings.offers?.[offer], language, "kicker")}</p>
+          )}
           <h2 className="font-serif text-[26px] text-ink">
             {searching ? t("searchResults") : showOffer ? textOf(settings.offers?.[offer], language, "title") || (offer === "featured" ? cmsText(cms, language, "featuredTitle") || t("featured") : "") : activeBrand ? activeBrand.name : currentCategory ? labelCategory(currentCategory, language) : cmsText(cms, language, "featuredTitle")}
           </h2>
+          {showOffer && textOf(settings.offers?.[offer], language, "text") && (
+            <p className="mt-1 max-w-[32ch] text-sm text-muted">{textOf(settings.offers?.[offer], language, "text")}</p>
+          )}
           {activeBrand && !showOffer && (
             <p className="mt-1 max-w-[28ch] text-sm text-muted">{textOf(activeBrand, language, "description")}</p>
           )}
